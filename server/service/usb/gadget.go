@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 const (
 	GadgetPath = "/sys/kernel/config/usb_gadget/g0"
 	ConfigPath = GadgetPath + "/configs/c.1"
+	ModeFlag   = GadgetPath + "/bcdDevice"
 	UDCPath    = GadgetPath + "/UDC"
 	UDCClass   = "/sys/class/udc"
 	OTGRole    = "/proc/cviusb/otg_role"
@@ -35,6 +37,10 @@ const (
 	RNDISFunction = GadgetPath + "/functions/rndis.usb0"
 	RNDISLink     = ConfigPath + "/rndis.usb0"
 	RNDISFlag     = "/boot/usb.rndis0"
+
+	NormalInitScript  = "/kvmapp/system/init.d/S03usbdev"
+	HIDOnlyInitScript = "/kvmapp/system/init.d/S03usbhid"
+	ActiveInitScript  = "/etc/init.d/S03usbdev"
 
 	LegacyNoMediaImage = "/dev/mmcblk0p3"
 )
@@ -66,6 +72,22 @@ func WithDetachedUDC(h HIDController, mutate func() error) error {
 
 func Rebind(h HIDController) error {
 	return WithDetachedUDC(h, func() error { return nil })
+}
+
+func RestartPHY(h HIDController) error {
+	h.Lock()
+	h.CloseNoLock()
+	defer h.Unlock()
+
+	if err := exec.Command(ActiveInitScript, "restart_phy").Run(); err != nil {
+		return fmt.Errorf("restart usb phy: %w", err)
+	}
+
+	if err := h.OpenNoLockWithRetry(hidReopenTimeout, hidReopenDelay); err != nil {
+		return fmt.Errorf("reopen HID devices after usb phy reset: %w", err)
+	}
+
+	return nil
 }
 
 func DetachUDC() error {
