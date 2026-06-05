@@ -16,6 +16,8 @@ type Token struct {
 	jwt.RegisteredClaims
 }
 
+var getConfig = config.GetInstance
+
 func CheckToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if allowByToken(c) {
@@ -50,7 +52,7 @@ func CheckTokenOrLoopbackInternalToken() gin.HandlerFunc {
 }
 
 func allowByToken(c *gin.Context) bool {
-	conf := config.GetInstance()
+	conf := getConfig()
 
 	if conf.Authentication == "disable" {
 		return true
@@ -71,7 +73,7 @@ func abortUnauthorized(c *gin.Context) {
 }
 
 func GenerateJWT(username string) (string, error) {
-	conf := config.GetInstance()
+	conf := getConfig()
 
 	expireDuration := time.Duration(conf.JWT.RefreshTokenDuration) * time.Second
 
@@ -88,7 +90,7 @@ func GenerateJWT(username string) (string, error) {
 }
 
 func ParseJWT(jwtToken string) (*Token, error) {
-	conf := config.GetInstance()
+	conf := getConfig()
 
 	t, err := jwt.ParseWithClaims(jwtToken, &Token{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(conf.JWT.SecretKey), nil
