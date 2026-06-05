@@ -205,6 +205,18 @@ func SetRNDISEnabled(h HIDController, enabled bool) error {
 	})
 }
 
+func VirtualMediaEnabled() bool {
+	return Exists(MassStorageLink)
+}
+
+func DataDiskEnabled() bool {
+	return Exists(DataDiskLink)
+}
+
+func RNDISEnabled() bool {
+	return Exists(RNDISLink)
+}
+
 func SetLUNImage(h HIDController, image string, cdrom bool) error {
 	image = NormalizeImage(image)
 	return WithDetachedUDC(h, func() error {

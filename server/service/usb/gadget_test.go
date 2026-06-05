@@ -319,6 +319,31 @@ func TestSetRNDISEnabledTogglesFlagAndLink(t *testing.T) {
 	}
 }
 
+func TestEnabledStateComesFromConfigLinks(t *testing.T) {
+	withFakeGadget(t)
+	writeFile(t, MassStorageFlag, "")
+	writeFile(t, DataDiskFlag, "")
+	writeFile(t, RNDISFlag, "")
+
+	if VirtualMediaEnabled() || DataDiskEnabled() || RNDISEnabled() {
+		t.Fatal("enabled state used boot flags instead of configfs links")
+	}
+
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(DataDiskFunction, DataDiskLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(RNDISFunction, RNDISLink); err != nil {
+		t.Fatal(err)
+	}
+
+	if !VirtualMediaEnabled() || !DataDiskEnabled() || !RNDISEnabled() {
+		t.Fatal("enabled state did not use configfs links")
+	}
+}
+
 func TestWithDetachedUDCReattachesAfterMutationError(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}

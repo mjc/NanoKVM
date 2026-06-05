@@ -1,9 +1,6 @@
 package vm
 
 import (
-	"errors"
-	"os"
-
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 
@@ -12,23 +9,13 @@ import (
 	"NanoKVM-Server/service/usb"
 )
 
-var (
-	virtualNetwork = usb.RNDISFlag
-	virtualMedia   = usb.MassStorageFlag
-	virtualDisk    = usb.DataDiskFlag
-)
-
 func (s *Service) GetVirtualDevice(c *gin.Context) {
 	var rsp proto.Response
 
-	network, _ := isDeviceExist(virtualNetwork)
-	media, _ := isDeviceExist(virtualMedia)
-	disk, _ := isDeviceExist(virtualDisk)
-
 	rsp.OkRspWithData(c, &proto.GetVirtualDeviceRsp{
-		Network: network,
-		Media:   media,
-		Disk:    disk,
+		Network: usb.RNDISEnabled(),
+		Media:   usb.VirtualMediaEnabled(),
+		Disk:    usb.DataDiskEnabled(),
 	})
 	log.Debugf("get virtual device success")
 }
@@ -42,24 +29,24 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 		return
 	}
 
-	var device string
 	var update func(bool) error
+	var enabled func() bool
 
 	switch req.Device {
 	case "network":
-		device = virtualNetwork
+		enabled = usb.RNDISEnabled
 		update = func(on bool) error {
 			return usb.SetRNDISEnabled(hid.GetHid(), on)
 		}
 
 	case "media":
-		device = virtualMedia
+		enabled = usb.VirtualMediaEnabled
 		update = func(on bool) error {
 			return usb.SetVirtualMediaEnabled(hid.GetHid(), on)
 		}
 
 	case "disk":
-		device = virtualDisk
+		enabled = usb.DataDiskEnabled
 		update = func(on bool) error {
 			return usb.SetDataDiskEnabled(hid.GetHid(), on)
 		}
@@ -68,32 +55,15 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 		return
 	}
 
-	exist, _ := isDeviceExist(device)
-	if err := update(!exist); err != nil {
+	if err := update(!enabled()); err != nil {
 		log.Errorf("update virtual device %s failed: %s", req.Device, err)
 		rsp.ErrRsp(c, -3, "operation failed")
 		return
 	}
 
-	on, _ := isDeviceExist(device)
 	rsp.OkRspWithData(c, &proto.UpdateVirtualDeviceRsp{
-		On: on,
+		On: enabled(),
 	})
 
 	log.Debugf("update virtual device %s success", req.Device)
-}
-
-func isDeviceExist(device string) (bool, error) {
-	_, err := os.Stat(device)
-
-	if err == nil {
-		return true, nil
-	}
-
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-
-	log.Errorf("check file %s err: %s", device, err)
-	return false, err
 }
