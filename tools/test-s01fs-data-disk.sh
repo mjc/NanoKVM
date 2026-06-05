@@ -99,6 +99,34 @@ assert_log_not_contains() {
 	fi
 }
 
+wait_for_file() {
+	local path="$1"
+	local i
+
+	for i in {1..100}; do
+		[ -e "$path" ] && return 0
+		sleep 0.01
+	done
+
+	echo "timed out waiting for file: $path" >&2
+	cat "$NANOKVM_TEST_LOG" >&2
+	exit 1
+}
+
+wait_for_log_contains() {
+	local pattern="$1"
+	local i
+
+	for i in {1..100}; do
+		grep -Fq "$pattern" "$NANOKVM_TEST_LOG" && return 0
+		sleep 0.01
+	done
+
+	echo "timed out waiting for log to contain: $pattern" >&2
+	cat "$NANOKVM_TEST_LOG" >&2
+	exit 1
+}
+
 test_formats_existing_unformatted_partition_with_stale_marker() {
 	setup_case
 	trap teardown_case RETURN
@@ -107,10 +135,12 @@ test_formats_existing_unformatted_partition_with_stale_marker() {
 
 	"$script" start >/dev/null
 
+	wait_for_log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
 	[ -e "$NANOKVM_DATA_PART.hasfs" ]
 	[ -e "$NANOKVM_DISK0_MARKER" ]
 	assert_log_contains "blkid $NANOKVM_DATA_PART"
 	assert_log_contains "mkfs.exfat $NANOKVM_DATA_PART"
+	assert_log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
 }
 
 test_removes_marker_when_format_fails() {
@@ -122,6 +152,7 @@ test_removes_marker_when_format_fails() {
 
 	"$script" start >/dev/null
 
+	wait_for_log_contains "mkfs.exfat $NANOKVM_DATA_PART"
 	[ ! -e "$NANOKVM_DISK0_MARKER" ]
 	assert_log_contains "mkfs.exfat $NANOKVM_DATA_PART"
 	unset NANOKVM_MKFS_FAIL
@@ -159,11 +190,13 @@ test_creates_and_formats_missing_partition() {
 
 	"$script" start >/dev/null
 
+	wait_for_log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
 	[ -e "$NANOKVM_DATA_PART" ]
 	[ -e "$NANOKVM_DATA_PART.hasfs" ]
 	[ -e "$NANOKVM_DISK0_MARKER" ]
 	assert_log_contains "parted -s $NANOKVM_DISK mkpart primary 8193MB 100%"
 	assert_log_contains "mkfs.exfat $NANOKVM_DATA_PART"
+	assert_log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
 }
 
 test_formats_existing_unformatted_partition_with_stale_marker
