@@ -13,7 +13,7 @@ DOCKER_RUN_BASE := docker run -e UID=$(UID) -e GID=$(GID) -v $(PWD):/home/build/
 GO_BUILD_CMD := cd /home/build/NanoKVM/server && go mod tidy && CGO_ENABLED=1 GOOS=linux GOARCH=riscv64 CC=riscv64-unknown-linux-musl-gcc CGO_CFLAGS="-mcpu=c906fdv -march=rv64imafdcv0p7xthead -mcmodel=medany -mabi=lp64d" go build
 SUPPORT_BUILD_CMD := . ./home/build/MaixCDK/bin/activate && cd /home/build/NanoKVM/support/sg2002 && ./build kvm_system && ./build kvm_system add_to_kvmapp
 
-.PHONY: help check-root builder-image rebuild-image check-image shell app support all test test-server test-usb-scripts clean
+.PHONY: help check-root builder-image rebuild-image check-image shell app support all test test-server test-usb-scripts test-web check clean
 
 # Default target
 all: app support
@@ -33,7 +33,9 @@ help:
 	@echo "  all           - Build both app and support (default)"
 	@echo "  test          - Run server and USB init script tests"
 	@echo "  test-server   - Run Go server tests"
-	@echo "  test-usb-scripts - Run USB init script regression tests"
+	@echo "  test-usb-scripts - Run USB init script tests"
+	@echo "  test-web      - Run web TypeScript production build"
+	@echo "  check         - Run all tests and web build"
 	@echo "  clean         - Clean build artifacts"
 	@echo ""
 	@echo "Prerequisites:"
@@ -95,6 +97,12 @@ test-server:
 test-usb-scripts:
 	@echo "Running USB init script tests..."
 	@sh tests/usb-init-scripts-test.sh
+
+test-web:
+	@echo "Running web build..."
+	@cd web && pnpm build
+
+check: test test-web
 
 # Clean build artifacts
 clean:
