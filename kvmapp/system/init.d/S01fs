@@ -8,6 +8,11 @@
 : "${NANOKVM_DATA_DIR:=/data}"
 : "${NANOKVM_DISK0_MARKER:=/etc/kvm.disk0}"
 
+is_empty_partition() {
+        [ "$(dd if="$1" bs=1M count=4 2>/dev/null | wc -c)" = "0" ] && return 0
+        [ "$(dd if="$1" bs=1M count=4 2>/dev/null | tr -d '\000' | wc -c)" = "0" ]
+}
+
 if [ "$1" = "start" ]
 then
                 # use all sdcard free space for data
@@ -40,6 +45,9 @@ then
                         if [ -n "$(blkid "$NANOKVM_DATA_PART" 2>/dev/null)" ]
                         then
                                 touch "$NANOKVM_DISK0_MARKER"
+                        elif ! is_empty_partition "$NANOKVM_DATA_PART"
+                        then
+                                rm -f "$NANOKVM_DISK0_MARKER"
                         else
                                 # Mark setup complete only after formatting succeeds.
                                 if mkfs.exfat "$NANOKVM_DATA_PART"

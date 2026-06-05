@@ -127,6 +127,19 @@ test_removes_marker_when_format_fails() {
 	unset NANOKVM_MKFS_FAIL
 }
 
+test_does_not_format_unknown_non_empty_partition() {
+	setup_case
+	trap teardown_case RETURN
+	printf 'user data' > "$NANOKVM_DATA_PART"
+	: > "$NANOKVM_DISK0_MARKER"
+
+	"$script" start >/dev/null
+
+	[ ! -e "$NANOKVM_DISK0_MARKER" ]
+	assert_log_contains "blkid $NANOKVM_DATA_PART"
+	assert_log_not_contains "mkfs.exfat $NANOKVM_DATA_PART"
+}
+
 test_skips_format_when_partition_has_filesystem() {
 	setup_case
 	trap teardown_case RETURN
@@ -155,6 +168,7 @@ test_creates_and_formats_missing_partition() {
 
 test_formats_existing_unformatted_partition_with_stale_marker
 test_removes_marker_when_format_fails
+test_does_not_format_unknown_non_empty_partition
 test_skips_format_when_partition_has_filesystem
 test_creates_and_formats_missing_partition
 
