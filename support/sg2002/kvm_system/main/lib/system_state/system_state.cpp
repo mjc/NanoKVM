@@ -14,7 +14,7 @@ static const char *USB_HID0_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1
 static const char *USB_HID1_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/hid.GS1";
 static const char *USB_HID2_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/hid.GS2";
 
-static int path_exists(const char *path)
+static bool path_exists(const char *path)
 {
 	return access(path, F_OK) == 0;
 }

@@ -32,7 +32,7 @@ USB_HID_KEYBOARD_FUNC='hid.GS0'
 USB_HID_RELATIVE_MOUSE_FUNC='hid.GS1'
 USB_HID_ABSOLUTE_MOUSE_FUNC='hid.GS2'
 USB_HID_BOOT_SUBCLASS='1'
-USB_HID_NON_BOOT_SUBCLASS=''
+USB_HID_NON_BOOT_SUBCLASS='0'
 USB_HID_KEYBOARD_PROTOCOL='1'
 USB_HID_MOUSE_PROTOCOL='2'
 USB_HID_KEYBOARD_REPORT_LENGTH='8'
@@ -130,10 +130,7 @@ add_hid_function(){
     report_desc="$5"
 
     mkdir "functions/${func}"
-    if [ -n "${subclass}" ]
-    then
-        echo "${subclass}" > "functions/${func}/subclass"
-    fi
+    echo "${subclass}" > "functions/${func}/subclass"
     set_hid_wakeup "${func}"
     echo "${protocol}" > "functions/${func}/protocol"
     echo "${report_length}" > "functions/${func}/report_length"
@@ -189,7 +186,7 @@ start_usb_host(){
 }
 
 restart_udc(){
-    echo > "${USB_GADGET_ROOT}/${USB_GADGET_NAME}/UDC"
+    echo '' > "${USB_GADGET_ROOT}/${USB_GADGET_NAME}/UDC"
     sleep 1
     udc=$(first_udc)
     [ -n "${udc}" ] || return 1
