@@ -1,41 +1,61 @@
 #!/bin/sh
 
+: "${NANOKVM_DISK:=/dev/mmcblk0}"
+: "${NANOKVM_BOOT_PART:=/dev/mmcblk0p1}"
+: "${NANOKVM_ROOT_PART:=/dev/mmcblk0p2}"
+: "${NANOKVM_DATA_PART:=/dev/mmcblk0p3}"
+: "${NANOKVM_BOOT_DIR:=/boot}"
+: "${NANOKVM_DATA_DIR:=/data}"
+: "${NANOKVM_DISK0_MARKER:=/etc/kvm.disk0}"
+
 if [ "$1" = "start" ]
 then
                 # use all sdcard free space for data
-                parted -s /dev/mmcblk0 "resizepart 2 -0"
+                parted -s "$NANOKVM_DISK" "resizepart 2 -0"
                 echo "yes
                 8192MB
-                " | parted ---pretend-input-tty /dev/mmcblk0 "resizepart 2 8192MB"
+                " | parted ---pretend-input-tty "$NANOKVM_DISK" "resizepart 2 8192MB"
                 # resize data filesystem
-                (resize2fs /dev/mmcblk0p2) &
+                (resize2fs "$NANOKVM_ROOT_PART") &
 
 
         . /etc/profile
         printf "mounting filesystem : "
-        mkdir -p /boot
-        mount -t vfat /dev/mmcblk0p1 /boot
+        mkdir -p "$NANOKVM_BOOT_DIR"
+        mount -t vfat "$NANOKVM_BOOT_PART" "$NANOKVM_BOOT_DIR"
         mount -t configfs configfs /sys/kernel/config
         mount -t debugfs debugfs /sys/kernel/debug
 
-        if [ -e /boot/usb.disk0 ]
+        if [ -e "$NANOKVM_BOOT_DIR/usb.disk0" ]
         then
-                if [ ! -e /etc/kvm.disk0 ]
+                if [ ! -e "$NANOKVM_DATA_PART" ]
                 then
-                        touch /etc/kvm.disk0
                         # use all sdcard free space for data
-                        parted -s /dev/mmcblk0 "mkpart primary 8193MB 100%"
+                        parted -s "$NANOKVM_DISK" "mkpart primary 8193MB 100%"
                         sleep 1
-                        # resize data filesystem
-                        (mkfs.exfat /dev/mmcblk0p3) &
-                        sleep 1
+                fi
+
+                if [ -e "$NANOKVM_DATA_PART" ]
+                then
+                        if [ -n "$(blkid "$NANOKVM_DATA_PART" 2>/dev/null)" ]
+                        then
+                                touch "$NANOKVM_DISK0_MARKER"
+                        else
+                                # Mark setup complete only after formatting succeeds.
+                                if mkfs.exfat "$NANOKVM_DATA_PART"
+                                then
+                                        touch "$NANOKVM_DISK0_MARKER"
+                                else
+                                        rm -f "$NANOKVM_DISK0_MARKER"
+                                fi
+                        fi
                 fi
         fi
 
-        if [ -e /dev/mmcblk0p3 ]
+        if [ -e "$NANOKVM_DATA_PART" ]
         then
-                mkdir -p /data
-                mount /dev/mmcblk0p3 /data
+                mkdir -p "$NANOKVM_DATA_DIR"
+                mount "$NANOKVM_DATA_PART" "$NANOKVM_DATA_DIR"
         fi
 
         echo "OK"
