@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+var untarCopy = io.Copy
+
 func UnTarGz(srcFile string, destDir string) (string, error) {
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return "", err
@@ -65,7 +67,7 @@ func UnTarGz(srcFile string, destDir string) (string, error) {
 				return "", err
 			}
 
-			if _, err := io.Copy(file, tr); err != nil {
+			if _, err := untarCopy(file, tr); err != nil {
 				_ = file.Close()
 				return "", err
 			}

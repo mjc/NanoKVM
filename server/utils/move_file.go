@@ -7,11 +7,23 @@ import (
 	"strings"
 )
 
+var (
+	moveMkdirAll = os.MkdirAll
+	moveRename   = os.Rename
+	moveOpen     = os.Open
+	moveCreate   = os.Create
+	moveCopy     = io.Copy
+	moveStat     = os.Stat
+	moveChmod    = os.Chmod
+	moveRemove   = os.Remove
+	moveWalk     = filepath.Walk
+)
+
 func MoveFile(src, dst string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := moveMkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	err := os.Rename(src, dst)
+	err := moveRename(src, dst)
 	if err != nil {
 		if strings.Contains(err.Error(), "invalid cross-device link") {
 			return MoveFileCrossFS(src, dst)
@@ -23,17 +35,17 @@ func MoveFile(src, dst string) error {
 
 func MoveFileCrossFS(src, dst string) error {
 	tmp := dst + ".tmp"
-	srcFile, err := os.Open(src)
+	srcFile, err := moveOpen(src)
 	if err != nil {
 		return err
 	}
 
-	tmpFile, err := os.Create(tmp)
+	tmpFile, err := moveCreate(tmp)
 	if err != nil {
 		_ = srcFile.Close()
 		return err
 	}
-	_, err = io.Copy(tmpFile, srcFile)
+	_, err = moveCopy(tmpFile, srcFile)
 	if err != nil {
 		_ = srcFile.Close()
 		_ = tmpFile.Close()
@@ -41,37 +53,37 @@ func MoveFileCrossFS(src, dst string) error {
 	}
 	_ = srcFile.Close()
 	_ = tmpFile.Close()
-	fi, err := os.Stat(src)
+	fi, err := moveStat(src)
 	if err != nil {
 		return err
 	}
-	err = os.Chmod(tmp, fi.Mode())
+	err = moveChmod(tmp, fi.Mode())
 	if err != nil {
 		return err
 	}
-	_ = os.Remove(src)
-	err = os.Rename(tmp, dst)
+	err = moveRename(tmp, dst)
 	if err != nil {
 		return err
 	}
+	_ = moveRemove(src)
 	return nil
 }
 
 func MoveFilesRecursively(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+	return moveWalk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		fileName := strings.Replace(path, src, "", 1)
 		dstName := dst + fileName
-		fileInfo, err := os.Stat(path)
+		fileInfo, err := moveStat(path)
 		if err != nil {
 			return err
 		}
 
 		if fileInfo.IsDir() {
-			return os.MkdirAll(dstName, fileInfo.Mode())
+			return moveMkdirAll(dstName, fileInfo.Mode())
 		}
 		return MoveFile(path, dstName)
 	})
