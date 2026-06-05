@@ -118,6 +118,7 @@
                 pkgs.cmake
                 pkgs.ninja
                 pkgs.gnumake
+                pkgs.gcc
                 pkgs.autoconf
                 pkgs.automake
                 pkgs.libtool
@@ -126,6 +127,19 @@
                 pkgs.python3Packages.virtualenv
                 pkgs.git
                 pkgs.file
+                pkgs.rsync
+                pkgs.util-linux
+                pkgs.fuse3
+                pkgs.which
+                pkgs.bc
+                pkgs.bison
+                pkgs.flex
+                pkgs.cpio
+                pkgs.unzip
+                pkgs.zip
+                pkgs.perl
+                pkgs.gawk
+                pkgs.libxml2
                 pkgs.wget
                 pkgs.gzip
                 pkgs.gnutar

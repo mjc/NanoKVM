@@ -42,4 +42,22 @@ scripts/deploy-nanokvm.sh rollback 192.168.1.42
 scripts/deploy-nanokvm.sh rollback 192.168.1.42 --backup 20260605-153022-my-change
 ```
 
+Build a full SD-card image:
+
+```sh
+scripts/build-nanokvm-image.sh --name my-change
+```
+
+The image script uses `~/src/licheerv-nano` by default for the Sipeed `LicheeRV-Nano-Build` SDK checkout, cloning it if needed. It also uses `~/src/MaixCDK` to build the required `kvm_system` support binary. It builds the `sg2002_licheervnano_sd` Buildroot image, assembles this repository's `kvmapp` with the freshly built support, server, and web artifacts, mounts the SDK image's rootfs partition with `host/mount_ext4.sh`, overlays `/kvmapp`, and writes the patched image under `dist/images/`.
+
+Useful image build options:
+
+```sh
+scripts/build-nanokvm-image.sh --skip-sdk-build
+scripts/build-nanokvm-image.sh --skip-support-build
+scripts/build-nanokvm-image.sh --no-build-app
+scripts/build-nanokvm-image.sh --sdk-dir ~/src/licheerv-nano
+scripts/build-nanokvm-image.sh --maixcdk-dir ~/src/MaixCDK
+```
+
 The vendor RISC-V musl toolchain is Linux x86_64-only, matching the upstream backend build instructions. On Darwin or non-x86_64 Linux, the shell still provides the frontend and general development tools, but target server builds need an `x86_64-linux` builder.
