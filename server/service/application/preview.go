@@ -2,7 +2,6 @@ package application
 
 import (
 	"NanoKVM-Server/proto"
-	"os"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -11,6 +10,8 @@ import (
 const (
 	PreviewUpdatesFlag = "/etc/kvm/preview_updates"
 )
+
+var previewUpdatesFlag = PreviewUpdatesFlag
 
 func (s *Service) GetPreview(c *gin.Context) {
 	var rsp proto.Response
@@ -37,14 +38,14 @@ func (s *Service) SetPreview(c *gin.Context) {
 	}
 
 	if req.Enable {
-		if err := os.WriteFile(PreviewUpdatesFlag, []byte("1"), 0o644); err != nil {
-			log.Errorf("failed to write %s: %s", PreviewUpdatesFlag, err)
+		if err := writeFile(previewUpdatesFlag, []byte("1"), 0o644); err != nil {
+			log.Errorf("failed to write %s: %s", previewUpdatesFlag, err)
 			rsp.ErrRsp(c, -2, "enable failed")
 			return
 		}
 	} else {
-		if err := os.Remove(PreviewUpdatesFlag); err != nil {
-			log.Errorf("failed to remove %s: %s", PreviewUpdatesFlag, err)
+		if err := removeFile(previewUpdatesFlag); err != nil {
+			log.Errorf("failed to remove %s: %s", previewUpdatesFlag, err)
 			rsp.ErrRsp(c, -3, "disable failed")
 			return
 		}
@@ -55,6 +56,6 @@ func (s *Service) SetPreview(c *gin.Context) {
 }
 
 func isPreviewEnabled() bool {
-	_, err := os.Stat(PreviewUpdatesFlag)
+	_, err := statFile(previewUpdatesFlag)
 	return err == nil
 }

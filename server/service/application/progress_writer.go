@@ -3,7 +3,6 @@ package application
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -15,6 +14,8 @@ const (
 	tickerInterval     = 2500 * time.Millisecond
 	sentinelPermission = 0644
 )
+
+var sentinelFilePath = sentinelPath
 
 // progressWriter wraps an io.Writer to track and report upload progress.
 type progressWriter struct {
@@ -53,21 +54,17 @@ func (pw *progressWriter) updateSentinel() {
 		return
 	}
 
-	content, err := os.ReadFile(sentinelPath)
+	content, err := readFile(sentinelFilePath)
 	if err != nil {
 		log.Error("Failed to read sentinel file")
 		return
 	}
 
 	parts := strings.SplitN(string(content), ";", 2)
-	if len(parts) == 0 {
-		return
-	}
-
 	percentage := float64(pw.written) / float64(pw.totalSize) * 100
 	newContent := fmt.Sprintf("%s;%.2f%%", parts[0], percentage)
 
-	if err := os.WriteFile(sentinelPath, []byte(newContent), sentinelPermission); err != nil {
+	if err := writeFile(sentinelFilePath, []byte(newContent), sentinelPermission); err != nil {
 		log.Error("Failed to update sentinel file")
 	}
 }

@@ -2,7 +2,6 @@ package application
 
 import (
 	"fmt"
-	"os"
 	"sync"
 
 	"NanoKVM-Server/utils"
@@ -12,6 +11,10 @@ import (
 var (
 	mutex      sync.Mutex
 	isUpdating bool
+
+	untarGz              = utils.UnTarGz
+	moveFilesRecursively = utils.MoveFilesRecursively
+	chmodRecursively     = utils.ChmodRecursively
 )
 
 func acquireUpdateLock() bool {
@@ -32,7 +35,7 @@ func releaseUpdateLock() {
 }
 
 func installPackage(source string) error {
-	dir, err := utils.UnTarGz(source, CacheDir)
+	dir, err := untarGz(source, cacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to decompress app: %w", err)
 	}
@@ -45,7 +48,7 @@ func installPackage(source string) error {
 		return err
 	}
 
-	if err := utils.ChmodRecursively(AppDir, 0o755); err != nil {
+	if err := chmodRecursively(appDir, 0o755); err != nil {
 		return fmt.Errorf("failed to chmod: %w", err)
 	}
 
@@ -53,11 +56,11 @@ func installPackage(source string) error {
 }
 
 func backupCurrentApp() error {
-	if err := os.RemoveAll(BackupDir); err != nil {
+	if err := removeAll(backupDir); err != nil {
 		return fmt.Errorf("failed to remove backup: %w", err)
 	}
 
-	if err := utils.MoveFilesRecursively(AppDir, BackupDir); err != nil {
+	if err := moveFilesRecursively(appDir, backupDir); err != nil {
 		return fmt.Errorf("failed to backup app: %w", err)
 	}
 
@@ -65,9 +68,9 @@ func backupCurrentApp() error {
 }
 
 func applyUpdate(sourceDir string) error {
-	if err := utils.MoveFilesRecursively(sourceDir, AppDir); err != nil {
+	if err := moveFilesRecursively(sourceDir, appDir); err != nil {
 		// Try to restore backup on failure
-		if restoreErr := utils.MoveFilesRecursively(BackupDir, AppDir); restoreErr != nil {
+		if restoreErr := moveFilesRecursively(backupDir, appDir); restoreErr != nil {
 			log.Errorf("Failed to restore backup after update failure: %v", restoreErr)
 		}
 		return fmt.Errorf("failed to move update in place: %w", err)

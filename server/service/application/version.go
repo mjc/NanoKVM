@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -14,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
+
+var httpGet = http.Get
 
 type Latest struct {
 	Version string `json:"version"`
@@ -29,8 +30,8 @@ func (s *Service) GetVersion(c *gin.Context) {
 	// current version
 	currentVersion := "1.0.0"
 
-	versionFile := fmt.Sprintf("%s/version", AppDir)
-	if version, err := os.ReadFile(versionFile); err == nil {
+	versionFile := fmt.Sprintf("%s/version", appDir)
+	if version, err := readFile(versionFile); err == nil {
 		currentVersion = strings.ReplaceAll(string(version), "\n", "")
 	}
 
@@ -50,14 +51,14 @@ func (s *Service) GetVersion(c *gin.Context) {
 }
 
 func getLatest() (*Latest, error) {
-	baseURL := StableURL
+	baseURL := stableURL
 	if isPreviewEnabled() {
-		baseURL = PreviewURL
+		baseURL = previewURL
 	}
 
 	url := fmt.Sprintf("%s/latest.json?now=%d", baseURL, time.Now().Unix())
 
-	resp, err := http.Get(url)
+	resp, err := httpGet(url)
 	if err != nil {
 		log.Debugf("failed to request version: %v", err)
 		return nil, err

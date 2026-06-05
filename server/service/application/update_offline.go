@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -35,15 +33,15 @@ func (s *Service) OfflineUpdate(c *gin.Context) {
 	rsp.OkRsp(c)
 	log.Debugf("offline update application success")
 
-	time.Sleep(1 * time.Second)
-	_ = exec.Command("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
+	time.Sleep(restartDelay)
+	_ = restartCommand("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
 }
 
 func offlineUpdate(c *gin.Context) error {
-	_ = os.RemoveAll(CacheDir)
-	_ = os.MkdirAll(CacheDir, 0o755)
+	_ = removeAll(cacheDir)
+	_ = mkdirAll(cacheDir, 0o755)
 	defer func() {
-		_ = os.RemoveAll(CacheDir)
+		_ = removeAll(cacheDir)
 	}()
 
 	if err := checkDownloadInProgress(); err != nil {
@@ -76,7 +74,7 @@ func offlineUpdate(c *gin.Context) error {
 }
 
 func checkDownloadInProgress() error {
-	if _, err := os.Stat(sentinelPath); err == nil {
+	if _, err := statFile(sentinelFilePath); err == nil {
 		log.Debug("Download in progress")
 		return fmt.Errorf("download already in progress")
 	}
@@ -84,7 +82,7 @@ func checkDownloadInProgress() error {
 }
 
 func createSentinelFile() error {
-	if err := os.WriteFile(sentinelPath, []byte("downloading"), sentinelPermission); err != nil {
+	if err := writeFile(sentinelFilePath, []byte("downloading"), sentinelPermission); err != nil {
 		log.Errorf("Failed to create sentinel file: %v", err)
 		return fmt.Errorf("failed to create sentinel file: %w", err)
 	}
@@ -130,8 +128,8 @@ func saveUploadedFile(part *multipart.Part, contentLength int64) (string, error)
 		return "", err
 	}
 
-	outPath := filepath.Join(CacheDir, filename)
-	out, err := os.Create(outPath)
+	outPath := filepath.Join(cacheDir, filename)
+	out, err := createFile(outPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create output file: %w", err)
 	}
@@ -172,5 +170,5 @@ func validateFilename(filename string) error {
 }
 
 func removeSentinelFile() {
-	_ = os.Remove(sentinelPath)
+	_ = removeFile(sentinelFilePath)
 }

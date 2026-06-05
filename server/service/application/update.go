@@ -21,6 +21,13 @@ const (
 	maxTries = 3
 )
 
+var (
+	retryDelay      = 3 * time.Second
+	restartDelay    = time.Second
+	downloadRequest = utils.Download
+	restartCommand  = exec.Command
+)
+
 func (s *Service) Update(c *gin.Context) {
 	var rsp proto.Response
 
@@ -39,16 +46,16 @@ func (s *Service) Update(c *gin.Context) {
 	log.Debugf("update application success")
 
 	// Sleep for a second before restarting the device
-	time.Sleep(1 * time.Second)
+	time.Sleep(restartDelay)
 
-	_ = exec.Command("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
+	_ = restartCommand("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
 }
 
 func update() error {
-	_ = os.RemoveAll(CacheDir)
-	_ = os.MkdirAll(CacheDir, 0o755)
+	_ = removeAll(cacheDir)
+	_ = mkdirAll(cacheDir, 0o755)
 	defer func() {
-		_ = os.RemoveAll(CacheDir)
+		_ = removeAll(cacheDir)
 	}()
 
 	// get latest information
@@ -58,7 +65,7 @@ func update() error {
 	}
 
 	// download
-	target := fmt.Sprintf("%s/%s", CacheDir, latest.Name)
+	target := fmt.Sprintf("%s/%s", cacheDir, latest.Name)
 	if err := download(latest.Url, target); err != nil {
 		log.Errorf("download app failed: %s", err)
 		return err
@@ -83,7 +90,7 @@ func download(url string, target string) (err error) {
 	for i := range maxTries {
 		log.Debugf("attempt #%d/%d", i+1, maxTries)
 		if i > 0 {
-			time.Sleep(time.Second * 3)
+			time.Sleep(retryDelay)
 		}
 
 		var req *http.Request
@@ -94,7 +101,7 @@ func download(url string, target string) (err error) {
 		}
 
 		log.Debugf("update will be saved to: %s", target)
-		err = utils.Download(req, target)
+		err = downloadRequest(req, target)
 		if err != nil {
 			log.Errorf("downloading latest application failed, try again...")
 			continue
