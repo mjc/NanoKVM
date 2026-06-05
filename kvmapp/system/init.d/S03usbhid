@@ -9,7 +9,7 @@ start_usb_dev(){
     mkdir g0
     cd g0
 
-    echo 0x0101 > bcdUSB
+    echo 0x0110 > bcdUSB
     echo 0x0623 > bcdDevice
     # echo 0x3346 > idVendor
     # echo 0x1009 > idProduct
@@ -26,15 +26,15 @@ start_usb_dev(){
         echo 0x1009 > idProduct
     fi
     mkdir strings/0x409
-    # echo '0' > strings/0x409/serialnumber
-    echo 'sipeed' > strings/0x409/manufacturer
-    echo 'NanoKVM' > strings/0x409/product
+    printf '%s' '0123456789ABCDEF' > strings/0x409/serialnumber
+    printf '%s' 'sipeed' > strings/0x409/manufacturer
+    printf '%s' 'NanoKVM' > strings/0x409/product
 
     mkdir configs/c.1
     echo 0xA0 > configs/c.1/bmAttributes
     echo 200 > configs/c.1/MaxPower
     mkdir configs/c.1/strings/0x409
-    echo "NanoKVM" >  configs/c.1/strings/0x409/configuration
+    printf '%s' 'NanoKVM' >  configs/c.1/strings/0x409/configuration
 
     # keyboard
     mkdir functions/hid.GS0
@@ -62,7 +62,6 @@ start_usb_dev(){
 
     # touchpad
     mkdir functions/hid.GS2
-    echo 1 > functions/hid.GS2/subclass
     if [ ! -e /boot/usb.notwakeup ]
     then
         echo 1 > functions/hid.GS2/wakeup_on_write
