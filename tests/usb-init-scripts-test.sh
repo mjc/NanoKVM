@@ -82,8 +82,9 @@ USB_HID_KEYBOARD_FUNC="hid.GS0"
 USB_HID_RELATIVE_MOUSE_FUNC="hid.GS1"
 USB_HID_ABSOLUTE_MOUSE_FUNC="hid.GS2"
 USB_MASS_STORAGE_FUNC="mass_storage.disk0"
+USB_DATA_DISK_FUNC="mass_storage.disk1"
 USB_RNDIS_FUNC="rndis.usb0"
-USB_LEGACY_EMPTY_DISK_BACKING="/dev/mmcblk0p3"
+USB_DATA_DISK_BACKING="/dev/mmcblk0p3"
 USB_TEST_IMAGE="/data/install.iso"
 
 KEYBOARD_REPORT_DESC="05010906a101050719e029e71500250175019508810295017508810395057501050819012905910295017503910395067508150025e70507190029e78100c0"
@@ -315,21 +316,23 @@ test_normal_disable_hid_removes_hid_functions(){
     assert_no_hid_functions "${g}"
 }
 
-test_normal_legacy_mass_storage(){
+test_normal_media_and_data_disk_split(){
     base=$(new_env)
-    : > "${base}/boot/usb.disk0"
+    : > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.disk0"
     run_start "${NORMAL_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
 
     assert_link "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}" "functions/${USB_MASS_STORAGE_FUNC}"
-    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable")" "1" "mass storage removable"
-    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "${USB_LEGACY_EMPTY_DISK_BACKING}" "legacy empty disk backing"
+    assert_link "${g}/configs/c.1/${USB_DATA_DISK_FUNC}" "functions/${USB_DATA_DISK_FUNC}"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "" "empty media file"
+    assert_eq "$(cat "${g}/functions/${USB_DATA_DISK_FUNC}/lun.0/file")" "${USB_DATA_DISK_BACKING}" "data disk backing"
 }
 
 test_normal_mounted_image_and_network(){
     base=$(new_env)
-    printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.disk0"
-    touch "${base}/boot/usb.disk0.ro"
+    printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.media0.ro"
     touch "${base}/boot/usb.rndis0"
     run_start "${NORMAL_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
@@ -343,7 +346,7 @@ test_normal_mounted_image_and_network(){
 test_hid_only_descriptors_and_no_wake(){
     base=$(new_env)
     touch "${base}/boot/usb.notwakeup"
-    touch "${base}/boot/usb.disk0"
+    touch "${base}/boot/usb.media0"
     touch "${base}/boot/usb.rndis0"
     run_start "${HID_ONLY_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
@@ -415,7 +418,7 @@ test_usb_scripts_do_not_source_profile
 test_normal_hid_descriptors
 test_normal_bios_flag_keeps_only_boot_hid_interfaces
 test_normal_disable_hid_removes_hid_functions
-test_normal_legacy_mass_storage
+test_normal_media_and_data_disk_split
 test_normal_mounted_image_and_network
 test_hid_only_descriptors_and_no_wake
 test_uses_one_udc
