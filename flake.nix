@@ -106,6 +106,97 @@
               pnpm build
             '';
           };
+
+          buildSupport = pkgs.writeShellApplication {
+            name = "nanokvm-build-support";
+            runtimeInputs = [
+              pkgs.git
+              pkgs.python3
+              pkgs.python3Packages.virtualenv
+              pkgs.cmake
+              pkgs.ninja
+              pkgs.gnumake
+              pkgs.gcc
+              pkgs.wget
+              pkgs.unzip
+            ];
+            text = ''
+              repo_root="$(git rev-parse --show-toplevel)"
+              maixcdk_dir="''${NANOKVM_MAIXCDK_DIR:-$HOME/src/MaixCDK}"
+              work_dir="$repo_root/.image-work"
+              fake_home="$work_dir/home"
+
+              if [ ! -d "$maixcdk_dir/.git" ]; then
+                mkdir -p "$(dirname "$maixcdk_dir")"
+                git clone https://github.com/Sipeed/MaixCDK "$maixcdk_dir"
+              else
+                git -C "$maixcdk_dir" fetch --tags origin
+              fi
+
+              if [ ! -x "$maixcdk_dir/bin/maixcdk" ]; then
+                (
+                  cd "$maixcdk_dir"
+                  python3 -m venv .
+                  # shellcheck disable=SC1091
+                  source bin/activate
+                  pip install -U -r requirements.txt
+                )
+              fi
+
+              rm -rf "$fake_home"
+              mkdir -p "$fake_home"
+              ln -s "$maixcdk_dir" "$fake_home/MaixCDK"
+              ln -s "$repo_root" "$fake_home/NanoKVM"
+
+              (
+                export HOME="$fake_home"
+                # shellcheck disable=SC1091
+                source "$fake_home/MaixCDK/bin/activate"
+                cd "$repo_root/support/sg2002"
+                ./build kvm_system
+                ./build kvm_system add_to_kvmapp
+              )
+            '';
+          };
+
+          buildImage = pkgs.writeShellApplication {
+            name = "nanokvm-build-image";
+            runtimeInputs = [
+              pkgs.git
+              pkgs.bash
+              pkgs.rsync
+              pkgs.findutils
+              pkgs.coreutils
+              pkgs.gnused
+              pkgs.gnugrep
+              pkgs.util-linux
+              pkgs.fuse3
+              pkgs.which
+              pkgs.bc
+              pkgs.bison
+              pkgs.flex
+              pkgs.cpio
+              pkgs.unzip
+              pkgs.zip
+              pkgs.perl
+              pkgs.gawk
+              pkgs.libxml2
+              pkgs.cmake
+              pkgs.ninja
+              pkgs.gnumake
+              pkgs.gcc
+              pkgs.python3
+              pkgs.python3Packages.virtualenv
+              pkgs.wget
+              buildServer
+              buildWeb
+              buildSupport
+            ];
+            text = ''
+              repo_root="$(git rev-parse --show-toplevel)"
+              exec "$repo_root/scripts/build-nanokvm-image.sh" "$@"
+            '';
+          };
         in
         {
           default = pkgs.mkShell {
@@ -146,6 +237,8 @@
                 pkgs.openssh
                 buildServer
                 buildWeb
+                buildSupport
+                buildImage
               ]
               ++ lib.optionals (hostTools != null) [ hostTools ];
 
@@ -158,6 +251,12 @@
                 export NANOKVM_GOOS=linux
                 export NANOKVM_GOARCH=riscv64
                 export NANOKVM_CGO_CFLAGS="-mcpu=c906fdv -march=rv64imafdcv0p7xthead -mcmodel=medany -mabi=lp64d"
+                export NANOKVM_SDK_DIR="''${NANOKVM_SDK_DIR:-$HOME/src/licheerv-nano}"
+                export NANOKVM_SDK_URL="''${NANOKVM_SDK_URL:-https://github.com/sipeed/LicheeRV-Nano-Build}"
+                export NANOKVM_MAIXCDK_DIR="''${NANOKVM_MAIXCDK_DIR:-$HOME/src/MaixCDK}"
+                export NANOKVM_SDK_REF="''${NANOKVM_SDK_REF:-main}"
+                export NANOKVM_IMAGE_BOARD="''${NANOKVM_IMAGE_BOARD:-sg2002_licheervnano_sd}"
+                export NANOKVM_IMAGE_OUTPUT_DIR="''${NANOKVM_IMAGE_OUTPUT_DIR:-dist/images}"
               ''
               + lib.optionalString (hostTools != null) ''
 
@@ -174,6 +273,8 @@
                 echo "NanoKVM nix shell ready."
                 echo "  nanokvm-build-server  # build server/NanoKVM-Server for riscv64 linux"
                 echo "  nanokvm-build-web     # install frontend deps and build web/dist"
+                echo "  nanokvm-build-support # build kvm_system with MaixCDK"
+                echo "  nanokvm-build-image   # build SDK image and overlay /kvmapp"
               '';
           };
         }

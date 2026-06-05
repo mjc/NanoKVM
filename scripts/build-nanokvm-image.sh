@@ -53,12 +53,12 @@ abspath() {
   esac
 }
 
-sdk_dir="$HOME/src/licheerv-nano"
-sdk_url="https://github.com/sipeed/LicheeRV-Nano-Build"
-sdk_ref="main"
-maixcdk_dir="$HOME/src/MaixCDK"
-board="sg2002_licheervnano_sd"
-output_dir="dist/images"
+sdk_dir="${NANOKVM_SDK_DIR:-$HOME/src/licheerv-nano}"
+sdk_url="${NANOKVM_SDK_URL:-https://github.com/sipeed/LicheeRV-Nano-Build}"
+sdk_ref="${NANOKVM_SDK_REF:-main}"
+maixcdk_dir="${NANOKVM_MAIXCDK_DIR:-$HOME/src/MaixCDK}"
+board="${NANOKVM_IMAGE_BOARD:-sg2002_licheervnano_sd}"
+output_dir="${NANOKVM_IMAGE_OUTPUT_DIR:-dist/images}"
 image_name="nanokvm"
 build_sdk=1
 build_support=1
