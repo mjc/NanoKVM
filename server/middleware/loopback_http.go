@@ -9,6 +9,8 @@ import (
 	"NanoKVM-Server/config"
 )
 
+var getPicoclawInternalToken = config.GetPicoclawInternalToken
+
 func ListenAndServeLoopbackHTTPRedirect(
 	httpAddr string,
 	httpsPort string,
@@ -74,7 +76,7 @@ func hasValidLoopbackHTTPToken(req *http.Request) bool {
 	if req == nil {
 		return false
 	}
-	token, err := config.GetPicoclawInternalToken()
+	token, err := getPicoclawInternalToken()
 	if err != nil || token == "" {
 		return false
 	}
