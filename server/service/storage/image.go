@@ -18,12 +18,46 @@ import (
 
 const (
 	imageDirectory = "/data"
-	imageNone      = "/dev/mmcblk0p3"
-	cdromFlag      = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/cdrom"
-	mountDevice    = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/file"
-	inquiryString  = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/inquiry_string"
-	roFlag         = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/ro"
+	dataDiskMarker = "/etc/kvm.disk0"
+	formatPending  = "/etc/kvm.disk0.formatting"
+	dataPartition  = "/dev/mmcblk0p3"
 )
+
+var (
+	imageNone     = dataPartition
+	cdromFlag     = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/cdrom"
+	mountDevice   = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/file"
+	inquiryString = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/inquiry_string"
+	roFlag        = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/ro"
+
+	dataDiskMarkerPath = dataDiskMarker
+	formatPendingPath  = formatPending
+	dataPartitionPath  = dataPartition
+)
+
+func mountImagePath(requested string) (string, bool) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", true
+	}
+	if isDataPartitionPath(requested) {
+		return "", false
+	}
+	return requested, true
+}
+
+func isDataPartitionPath(path string) bool {
+	if path == dataPartitionPath {
+		return true
+	}
+
+	requested, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	partition, err := os.Stat(dataPartitionPath)
+	return err == nil && os.SameFile(requested, partition)
+}
 
 func (s *Service) GetImages(c *gin.Context) {
 	var rsp proto.Response
@@ -62,6 +96,21 @@ func (s *Service) MountImage(c *gin.Context) {
 		rsp.ErrRsp(c, -1, "invalid arguments")
 		return
 	}
+
+	// mount
+	image, ok := mountImagePath(req.File)
+	if !ok {
+		rsp.ErrRsp(c, -2, "data disk is not ready")
+		return
+	}
+
+	h := hid.GetHid()
+	h.Lock()
+	h.CloseNoLock()
+	defer func() {
+		h.OpenNoLock()
+		h.Unlock()
+	}()
 
 	// cdrom and ro flag
 	// set to 0 when unmount image
@@ -108,25 +157,11 @@ func (s *Service) MountImage(c *gin.Context) {
 		return
 	}
 
-	// mount
-	image := req.File
-	if image == "" {
-		image = imageNone
-	}
-
 	if err := os.WriteFile(mountDevice, []byte(image), 0o666); err != nil {
 		log.Errorf("mount file %s failed: %s", image, err)
 		rsp.ErrRsp(c, -2, "mount image failed")
 		return
 	}
-
-	h := hid.GetHid()
-	h.Lock()
-	h.CloseNoLock()
-	defer func() {
-		h.OpenNoLock()
-		h.Unlock()
-	}()
 
 	// reset usb
 	commands := []string{
