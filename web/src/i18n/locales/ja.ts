@@ -361,8 +361,10 @@ const ja = {
         hidOnly: 'HID-Only モード',
         hidOnlyDesc:
           'このモードでは仮想デバイスはマウントされなくなり、基本的な HID 制御機能のみが保持されます。',
+        media: '仮想イメージ',
+        mediaDesc: '選択したイメージファイルをリモートホストに接続します',
         disk: '仮想ディスク',
-        diskDesc: 'リモートホストに仮想 USB ドライブをマウントする',
+        diskDesc: 'NanoKVM のデータストレージをリモートホストに公開します',
         network: '仮想ネットワークカード',
         networkDesc: 'リモートホストに仮想ネットワークカードをマウントする',
         reboot: '再起動',

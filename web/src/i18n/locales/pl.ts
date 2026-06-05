@@ -362,8 +362,10 @@ const pl = {
         hidOnly: 'HID – tylko tryb',
         hidOnlyDesc:
           'Przestań emulować urządzenia wirtualne, zachowując jedynie podstawową kontrolę HID',
+        media: 'Obraz wirtualny',
+        mediaDesc: 'Podłącz wybrany plik obrazu do zdalnego hosta',
         disk: 'Dysk wirtualny',
-        diskDesc: 'Mount virtual U-disk on the remote host',
+        diskDesc: 'Udostępnij magazyn danych NanoKVM zdalnemu hostowi',
         network: 'Sieć wirtualna',
         networkDesc: 'Zamontuj wirtualną kartę sieciową na zdalnym hoście',
         reboot: 'Uruchom ponownie',

@@ -359,8 +359,10 @@ const da = {
         hidOnly: 'HID-Kun tilstand',
         hidOnlyDesc:
           'Stop med at emulere virtuelle enheder, og behold kun grundlæggende HID kontrol',
+        media: 'Virtuelt image',
+        mediaDesc: 'Tilknyt en valgt imagefil til fjernværten',
         disk: 'Virtuel disk',
-        diskDesc: 'Mount virtual U-disk on the remote host',
+        diskDesc: 'Eksponer NanoKVM-datalageret for fjernværten',
         network: 'Virtuelt netværk',
         networkDesc: 'Monter det virtuelle netværkskort på den eksterne vært',
         reboot: 'Genstart',
