@@ -6,6 +6,14 @@ COMMON_SCRIPT="${ROOT_DIR}/kvmapp/system/init.d/S03usb-common"
 NORMAL_SCRIPT="${ROOT_DIR}/kvmapp/system/init.d/S03usbdev"
 HID_ONLY_SCRIPT="${ROOT_DIR}/kvmapp/system/init.d/S03usbhid"
 TMP_DIRS=""
+TEST_COMMON_SCRIPT=""
+
+CONFIGFS_GADGET_ATTRS="UDC bcdUSB bcdDevice idVendor idProduct"
+CONFIGFS_STRING_ATTRS="serialnumber manufacturer product"
+CONFIGFS_CONFIG_ATTRS="bmAttributes MaxPower"
+CONFIGFS_CONFIG_STRING_ATTRS="configuration"
+CONFIGFS_HID_ATTRS="subclass protocol report_length report_desc wakeup_on_write"
+CONFIGFS_LUN_ATTRS="removable ro cdrom inquiry_string file"
 
 cleanup(){
     for dir in ${TMP_DIRS}
@@ -84,6 +92,119 @@ RELATIVE_MOUSE_REPORT_DESC="05010902a1010901a10005091901290315002501950375018102
 ABSOLUTE_MOUSE_REPORT_DESC="05010902a1010901a10005091901290515002501950575018102950175038101050109300931150026ff7f350046ff7f751095028102050109381581257f35004500750895018106c0c0"
 HID_ONLY_ABSOLUTE_MOUSE_REPORT_DESC="05010902a1010901a10005091901290315002501950375018102950175058101050109300931150026ff7f350046ff7f751095028102050109381581257f35004500750895018106c0c0"
 
+setup_fake_configfs_tools(){
+    base=$(mktemp -d)
+    TMP_DIRS="${TMP_DIRS} ${base}"
+    fake_bin="${base}/bin"
+    mkdir -p "${fake_bin}"
+
+    real_mkdir=$(command -v mkdir)
+    real_rmdir=$(command -v rmdir)
+
+    cat > "${fake_bin}/mkdir" <<EOF
+#!/bin/sh
+"${real_mkdir}" "\$@" || exit \$?
+touch_attrs(){
+    dir="\$1"
+    shift
+    for attr in "\$@"
+    do
+        touch "\${dir}/\${attr}"
+    done
+}
+prepare_fake_configfs_dir(){
+    dir="\$1"
+    case "\${dir}" in
+      g0|*/g0)
+        "${real_mkdir}" -p "\${dir}/strings" "\${dir}/configs" "\${dir}/functions"
+        touch_attrs "\${dir}" ${CONFIGFS_GADGET_ATTRS}
+        ;;
+      strings/0x409|*/strings/0x409)
+        touch_attrs "\${dir}" ${CONFIGFS_STRING_ATTRS}
+        ;;
+      configs/c.1|*/configs/c.1)
+        touch_attrs "\${dir}" ${CONFIGFS_CONFIG_ATTRS}
+        ;;
+      configs/c.1/strings/0x409|*/configs/c.1/strings/0x409)
+        touch_attrs "\${dir}" ${CONFIGFS_CONFIG_STRING_ATTRS}
+        ;;
+      functions/hid.GS*|*/functions/hid.GS*)
+        printf '%s' '0' > "\${dir}/subclass"
+        touch_attrs "\${dir}" ${CONFIGFS_HID_ATTRS}
+        ;;
+      functions/mass_storage.*/lun.0|*/functions/mass_storage.*/lun.0)
+        touch_attrs "\${dir}" ${CONFIGFS_LUN_ATTRS}
+        ;;
+      functions/mass_storage.*|*/functions/mass_storage.*)
+        "${real_mkdir}" -p "\${dir}/lun.0"
+        prepare_fake_configfs_dir "\${dir}/lun.0"
+        ;;
+    esac
+}
+for arg in "\$@"
+do
+    case "\${arg}" in
+      -*) ;;
+      *) [ -d "\${arg}" ] && prepare_fake_configfs_dir "\${arg}" ;;
+    esac
+done
+EOF
+
+    cat > "${fake_bin}/rmdir" <<EOF
+#!/bin/sh
+remove_fake_configfs_attrs(){
+    dir="\$1"
+    case "\${dir}" in
+      g0|*/g0)
+        rm -f "\${dir}/UDC" "\${dir}/bcdUSB" "\${dir}/bcdDevice" "\${dir}/idVendor" "\${dir}/idProduct"
+        ;;
+      strings/0x409|*/strings/0x409)
+        rm -f "\${dir}/serialnumber" "\${dir}/manufacturer" "\${dir}/product"
+        ;;
+      configs/c.1|*/configs/c.1)
+        rm -f "\${dir}/bmAttributes" "\${dir}/MaxPower"
+        ;;
+      configs/c.1/strings/0x409|*/configs/c.1/strings/0x409)
+        rm -f "\${dir}/configuration"
+        ;;
+      functions/hid.GS*|*/functions/hid.GS*)
+        rm -f "\${dir}/subclass" "\${dir}/protocol" "\${dir}/report_length" "\${dir}/report_desc" "\${dir}/wakeup_on_write"
+        ;;
+      functions/mass_storage.*/lun.0|*/functions/mass_storage.*/lun.0)
+        rm -f "\${dir}/removable" "\${dir}/ro" "\${dir}/cdrom" "\${dir}/inquiry_string" "\${dir}/file"
+        ;;
+    esac
+}
+for arg in "\$@"
+do
+    case "\${arg}" in
+      -*) ;;
+      *)
+        [ -d "\${arg}" ] && remove_fake_configfs_attrs "\${arg}"
+        case "\${arg}" in
+          g0|*/g0)
+            rm -rf "\${arg}"
+            exit 0
+            ;;
+        esac
+        ;;
+    esac
+done
+"${real_rmdir}" "\$@"
+EOF
+
+    chmod +x "${fake_bin}/mkdir" "${fake_bin}/rmdir"
+
+    TEST_COMMON_SCRIPT="${base}/S03usb-common"
+    awk -v fake_bin="${fake_bin}" '
+        /^PATH=/ {
+            print "PATH=\"" fake_bin ":/sbin:/usr/sbin:/bin:/usr/bin${PATH:+:${PATH}}\""
+            next
+        }
+        { print }
+    ' "${COMMON_SCRIPT}" > "${TEST_COMMON_SCRIPT}"
+}
+
 assert_hid_attr(){
     assert_eq "$(cat "$1/functions/$2/$3")" "$4" "$5"
 }
@@ -137,8 +258,7 @@ run_script_action(){
     script="$1"
     action="$2"
     base="$3"
-    USB_TEST_MODE=1 \
-    USB_COMMON="${COMMON_SCRIPT}" \
+    USB_COMMON="${TEST_COMMON_SCRIPT}" \
     USB_BOOT_DIR="${base}/boot" \
     USB_GADGET_ROOT="${base}/gadget" \
     USB_UDC_CLASS="${base}/udc" \
@@ -290,6 +410,7 @@ test_restart_rebinds_udc(){
     assert_eq "$(cat "${base}/gadget/g0/UDC")" "${USB_DEFAULT_UDC}" "restarted UDC"
 }
 
+setup_fake_configfs_tools
 test_usb_scripts_do_not_source_profile
 test_normal_hid_descriptors
 test_normal_bios_flag_keeps_only_boot_hid_interfaces

@@ -49,12 +49,6 @@ remove_existing_gadget(){
     gadget="${USB_GADGET_ROOT}/${USB_GADGET_NAME}"
     [ -d "${gadget}" ] || return 0
 
-    if [ -n "${USB_TEST_MODE}" ]
-    then
-        rm -rf "${gadget}"
-        return 0
-    fi
-
     echo '' > "${gadget}/UDC" 2>/dev/null || true
     if [ -d "${gadget}/configs/c.1" ]
     then
@@ -79,32 +73,6 @@ remove_existing_gadget(){
     rmdir "${gadget}/configs" 2>/dev/null || true
     rmdir "${gadget}/functions" 2>/dev/null || true
     rmdir "${gadget}" 2>/dev/null || true
-}
-
-prepare_fake_gadget(){
-    [ -n "${USB_TEST_MODE}" ] || return 0
-    mkdir -p strings configs functions
-    touch UDC
-}
-
-prepare_fake_hid_function(){
-    func="$1"
-    [ -n "${USB_TEST_MODE}" ] || return 0
-    printf '%s' '0' > "functions/${func}/subclass"
-    for attr in protocol report_length report_desc wakeup_on_write
-    do
-        touch "functions/${func}/${attr}"
-    done
-}
-
-prepare_fake_lun(){
-    func="$1"
-    [ -n "${USB_TEST_MODE}" ] || return 0
-    mkdir -p "functions/${func}/lun.0"
-    for attr in removable ro cdrom inquiry_string file
-    do
-        touch "functions/${func}/lun.0/${attr}"
-    done
 }
 
 write_usb_strings(){
@@ -134,7 +102,6 @@ prepare_usb_gadget(){
     remove_existing_gadget
     mkdir "${USB_GADGET_NAME}"
     cd "${USB_GADGET_NAME}" || exit 1
-    prepare_fake_gadget
 
     echo "$1" > bcdUSB
     echo "$2" > bcdDevice
@@ -163,7 +130,6 @@ add_hid_function(){
     report_desc="$5"
 
     mkdir "functions/${func}"
-    prepare_fake_hid_function "${func}"
     if [ -n "${subclass}" ]
     then
         echo "${subclass}" > "functions/${func}/subclass"
