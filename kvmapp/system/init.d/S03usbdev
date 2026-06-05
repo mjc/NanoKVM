@@ -20,14 +20,12 @@ write_composite_device_class(){
 
 add_ncm_function(){
     mkdir "functions/${USB_NCM_FUNC}"
-    prepare_fake_ncm_function "${USB_NCM_FUNC}"
     echo WINNCM > "functions/${USB_NCM_FUNC}/os_desc/interface.ncm/compatible_id"
     ln -s "functions/${USB_NCM_FUNC}" configs/c.1/
 }
 
 add_rndis_function(){
     mkdir "functions/${USB_RNDIS_FUNC}"
-    prepare_fake_rndis_function "${USB_RNDIS_FUNC}"
     echo e0 > "functions/${USB_RNDIS_FUNC}/class"
     echo 01 > "functions/${USB_RNDIS_FUNC}/subclass"
     echo 03 > "functions/${USB_RNDIS_FUNC}/protocol"
@@ -60,7 +58,6 @@ add_mass_storage_profile(){
     profile_inquiry="$4"
 
     mkdir "functions/${USB_MASS_STORAGE_FUNC}"
-    prepare_fake_lun "${USB_MASS_STORAGE_FUNC}"
     echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable"
     echo "${profile_ro}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro"
     echo "${profile_cdrom}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom"
