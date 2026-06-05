@@ -200,7 +200,7 @@ func (h *Hid) closeDeletedDeviceNoLock(device hidDevice) {
 		return
 	}
 
-	log.Debugf("reopen %s because the cached HID handle was deleted", device.path)
+	log.Debugf("close %s because the cached HID handle was deleted", device.path)
 	h.closeDeviceNoLock(device)
 }
 

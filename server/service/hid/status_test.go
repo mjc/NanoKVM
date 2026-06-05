@@ -40,11 +40,11 @@ func TestGetHidModeRejectsUnknownBcdDevice(t *testing.T) {
 }
 
 func TestGetHidModeRequiresModeFlag(t *testing.T) {
-	oldModeFlag := ModeFlag
+	oldModeFlag := modeFlag
 	t.Cleanup(func() {
-		ModeFlag = oldModeFlag
+		modeFlag = oldModeFlag
 	})
-	ModeFlag = filepath.Join(t.TempDir(), "missing-bcdDevice")
+	modeFlag = filepath.Join(t.TempDir(), "missing-bcdDevice")
 
 	if _, err := getHidMode(); err == nil {
 		t.Fatal("getHidMode succeeded with a missing bcdDevice")
@@ -54,13 +54,13 @@ func TestGetHidModeRequiresModeFlag(t *testing.T) {
 func withModeFlag(t *testing.T, content string) {
 	t.Helper()
 
-	oldModeFlag := ModeFlag
+	oldModeFlag := modeFlag
 	t.Cleanup(func() {
-		ModeFlag = oldModeFlag
+		modeFlag = oldModeFlag
 	})
 
-	ModeFlag = filepath.Join(t.TempDir(), "bcdDevice")
-	if err := os.WriteFile(ModeFlag, []byte(content), 0o666); err != nil {
+	modeFlag = filepath.Join(t.TempDir(), "bcdDevice")
+	if err := os.WriteFile(modeFlag, []byte(content), 0o666); err != nil {
 		t.Fatal(err)
 	}
 }

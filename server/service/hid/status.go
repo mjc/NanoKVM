@@ -17,12 +17,13 @@ import (
 )
 
 const (
-	ModeNormal  = "normal"
-	ModeHidOnly = "hid-only"
+	ModeNormal      = "normal"
+	ModeHidOnly     = "hid-only"
+	DefaultModeFlag = "/sys/kernel/config/usb_gadget/g0/bcdDevice"
 )
 
 var (
-	ModeFlag = "/sys/kernel/config/usb_gadget/g0/bcdDevice"
+	modeFlag = DefaultModeFlag
 
 	ModeNormalScript  = "/kvmapp/system/init.d/S03usbdev"
 	ModeHidOnlyScript = "/kvmapp/system/init.d/S03usbhid"
@@ -202,9 +203,9 @@ func copyModeFile(srcScript string) error {
 }
 
 func getHidMode() (string, error) {
-	data, err := os.ReadFile(ModeFlag)
+	data, err := os.ReadFile(modeFlag)
 	if err != nil {
-		log.Errorf("failed to read %s: %s", ModeFlag, err)
+		log.Errorf("failed to read %s: %s", modeFlag, err)
 		return "", err
 	}
 
