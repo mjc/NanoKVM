@@ -7,10 +7,31 @@
 : "${NANOKVM_BOOT_DIR:=/boot}"
 : "${NANOKVM_DATA_DIR:=/data}"
 : "${NANOKVM_DISK0_MARKER:=/etc/kvm.disk0}"
+: "${NANOKVM_PROFILE:=/etc/profile}"
 
 is_empty_partition() {
-        [ "$(dd if="$1" bs=1M count=4 2>/dev/null | wc -c)" = "0" ] && return 0
-        [ "$(dd if="$1" bs=1M count=4 2>/dev/null | tr -d '\000' | wc -c)" = "0" ]
+        tmp="${TMPDIR:-/tmp}/s01fs-data-head.$$"
+
+        if ! dd if="$1" of="$tmp" bs=1M count=4 2>/dev/null
+        then
+                rm -f "$tmp"
+                return 1
+        fi
+
+        if [ "$(wc -c < "$tmp")" = "0" ]
+        then
+                rm -f "$tmp"
+                return 0
+        fi
+
+        if [ "$(tr -d '\000' < "$tmp" | wc -c)" = "0" ]
+        then
+                rm -f "$tmp"
+                return 0
+        fi
+
+        rm -f "$tmp"
+        return 1
 }
 
 format_and_mount_data_partition() {
@@ -27,6 +48,7 @@ format_and_mount_data_partition() {
 if [ "$1" = "start" ]
 then
         data_format_started=0
+        data_part_created=0
 
                 # use all sdcard free space for data
                 parted -s "$NANOKVM_DISK" "resizepart 2 -0"
@@ -37,7 +59,10 @@ then
                 (resize2fs "$NANOKVM_ROOT_PART") &
 
 
-        . /etc/profile
+        if [ -r "$NANOKVM_PROFILE" ]
+        then
+                . "$NANOKVM_PROFILE"
+        fi
         printf "mounting filesystem : "
         mkdir -p "$NANOKVM_BOOT_DIR"
         mount -t vfat "$NANOKVM_BOOT_PART" "$NANOKVM_BOOT_DIR"
@@ -50,12 +75,18 @@ then
                 then
                         # use all sdcard free space for data
                         parted -s "$NANOKVM_DISK" "mkpart primary 8193MB 100%"
+                        data_part_created=1
                         sleep 1
                 fi
 
                 if [ -e "$NANOKVM_DATA_PART" ]
                 then
-                        if [ -n "$(blkid "$NANOKVM_DATA_PART" 2>/dev/null)" ]
+                        if [ "$data_part_created" = "1" ]
+                        then
+                                # Keep boot moving, but mark setup complete only after formatting succeeds.
+                                (format_and_mount_data_partition) &
+                                data_format_started=1
+                        elif [ -n "$(blkid "$NANOKVM_DATA_PART" 2>/dev/null)" ]
                         then
                                 touch "$NANOKVM_DISK0_MARKER"
                         elif ! is_empty_partition "$NANOKVM_DATA_PART"

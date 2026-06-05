@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 script="$repo_root/kvmapp/system/init.d/S01fs"
+real_dd="$(command -v dd)"
 
 make_stubs() {
 	local bin="$1"
@@ -28,7 +29,12 @@ EOF
 #!/bin/sh
 printf 'parted %s\n' "$*" >> "$NANOKVM_TEST_LOG"
 case " $* " in
-	*" mkpart primary 8193MB 100% "*) : > "$NANOKVM_DATA_PART" ;;
+	*" mkpart primary 8193MB 100% "*)
+		: > "$NANOKVM_DATA_PART"
+		if [ "${NANOKVM_PARTED_CREATES_STALE_FS:-0}" = "1" ]; then
+			: > "$NANOKVM_DATA_PART.hasfs"
+		fi
+		;;
 esac
 exit 0
 EOF
@@ -52,7 +58,16 @@ fi
 exit 0
 EOF
 
-	chmod +x "$bin/mount" "$bin/resize2fs" "$bin/sleep" "$bin/parted" "$bin/blkid" "$bin/mkfs.exfat"
+	cat >"$bin/dd" <<'EOF'
+#!/bin/sh
+printf 'dd %s\n' "$*" >> "$NANOKVM_TEST_LOG"
+if [ "${NANOKVM_DD_FAIL:-0}" = "1" ]; then
+	exit 1
+fi
+exec "$NANOKVM_REAL_DD" "$@"
+EOF
+
+	chmod +x "$bin/mount" "$bin/resize2fs" "$bin/sleep" "$bin/parted" "$bin/blkid" "$bin/mkfs.exfat" "$bin/dd"
 }
 
 setup_case() {
@@ -69,12 +84,15 @@ setup_case() {
 	export NANOKVM_BOOT_DIR="$tmpdir/boot"
 	export NANOKVM_DATA_DIR="$tmpdir/data"
 	export NANOKVM_DISK0_MARKER="$tmpdir/etc/kvm.disk0"
+	export NANOKVM_PROFILE="$tmpdir/profile"
+	export NANOKVM_REAL_DD="$real_dd"
 
 	: > "$NANOKVM_DISK"
 	: > "$NANOKVM_BOOT_PART"
 	: > "$NANOKVM_ROOT_PART"
 	: > "$NANOKVM_BOOT_DIR/usb.disk0"
 	: > "$NANOKVM_TEST_LOG"
+	: > "$NANOKVM_PROFILE"
 }
 
 teardown_case() {
@@ -171,6 +189,22 @@ test_does_not_format_unknown_non_empty_partition() {
 	assert_log_not_contains "mkfs.exfat $NANOKVM_DATA_PART"
 }
 
+test_does_not_format_when_partition_cannot_be_read() {
+	setup_case
+	trap teardown_case RETURN
+	: > "$NANOKVM_DATA_PART"
+	: > "$NANOKVM_DISK0_MARKER"
+	export NANOKVM_DD_FAIL=1
+
+	"$script" start >/dev/null
+
+	[ ! -e "$NANOKVM_DISK0_MARKER" ]
+	assert_log_contains "blkid $NANOKVM_DATA_PART"
+	assert_log_contains "dd if=$NANOKVM_DATA_PART of="
+	assert_log_not_contains "mkfs.exfat $NANOKVM_DATA_PART"
+	unset NANOKVM_DD_FAIL
+}
+
 test_skips_format_when_partition_has_filesystem() {
 	setup_case
 	trap teardown_case RETURN
@@ -182,6 +216,23 @@ test_skips_format_when_partition_has_filesystem() {
 	[ -e "$NANOKVM_DISK0_MARKER" ]
 	assert_log_contains "blkid $NANOKVM_DATA_PART"
 	assert_log_not_contains "mkfs.exfat $NANOKVM_DATA_PART"
+}
+
+test_formats_new_partition_even_with_stale_signature() {
+	setup_case
+	trap teardown_case RETURN
+	export NANOKVM_PARTED_CREATES_STALE_FS=1
+
+	"$script" start >/dev/null
+
+	wait_for_log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
+	[ -e "$NANOKVM_DATA_PART" ]
+	[ -e "$NANOKVM_DISK0_MARKER" ]
+	assert_log_contains "parted -s $NANOKVM_DISK mkpart primary 8193MB 100%"
+	assert_log_not_contains "blkid $NANOKVM_DATA_PART"
+	assert_log_contains "mkfs.exfat $NANOKVM_DATA_PART"
+	assert_log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
+	unset NANOKVM_PARTED_CREATES_STALE_FS
 }
 
 test_creates_and_formats_missing_partition() {
@@ -202,7 +253,9 @@ test_creates_and_formats_missing_partition() {
 test_formats_existing_unformatted_partition_with_stale_marker
 test_removes_marker_when_format_fails
 test_does_not_format_unknown_non_empty_partition
+test_does_not_format_when_partition_cannot_be_read
 test_skips_format_when_partition_has_filesystem
+test_formats_new_partition_even_with_stale_signature
 test_creates_and_formats_missing_partition
 
 echo "S01fs data disk tests passed"
