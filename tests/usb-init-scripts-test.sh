@@ -74,6 +74,7 @@ USB_HID_KEYBOARD_FUNC="hid.GS0"
 USB_HID_RELATIVE_MOUSE_FUNC="hid.GS1"
 USB_HID_ABSOLUTE_MOUSE_FUNC="hid.GS2"
 USB_MASS_STORAGE_FUNC="mass_storage.disk0"
+USB_NCM_FUNC="ncm.usb0"
 USB_RNDIS_FUNC="rndis.usb0"
 USB_LEGACY_EMPTY_DISK_BACKING="/dev/mmcblk0p3"
 USB_TEST_IMAGE="/data/install.iso"
@@ -167,6 +168,9 @@ test_normal_hid_descriptors(){
 
     assert_eq "$(cat "${g}/bcdUSB")" "${USB_NORMAL_BCD_USB}" "normal bcdUSB"
     assert_eq "$(cat "${g}/bcdDevice")" "${USB_NORMAL_BCD_DEVICE}" "normal bcdDevice"
+    assert_eq "$(cat "${g}/bDeviceClass")" "0xEF" "normal device class"
+    assert_eq "$(cat "${g}/bDeviceSubClass")" "0x02" "normal device subclass"
+    assert_eq "$(cat "${g}/bDeviceProtocol")" "0x01" "normal device protocol"
     assert_text_bytes "${g}/strings/0x409/manufacturer" "${USB_MANUFACTURER}"
     assert_text_bytes "${g}/strings/0x409/product" "${USB_PRODUCT}"
     assert_text_bytes "${g}/strings/0x409/serialnumber" "${USB_SERIAL_NUMBER}"
@@ -208,16 +212,39 @@ test_normal_legacy_mass_storage(){
 
 test_normal_mounted_image_and_network(){
     base=$(new_env)
-    printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.disk0"
-    touch "${base}/boot/usb.disk0.ro"
+    printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.media0.ro"
     touch "${base}/boot/usb.rndis0"
     run_start "${NORMAL_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
 
     assert_link "${g}/configs/c.1/${USB_RNDIS_FUNC}" "functions/${USB_RNDIS_FUNC}"
+    assert_link "${g}/os_desc/c.1" "configs/c.1"
+    assert_eq "$(cat "${g}/os_desc/use")" "1" "os desc use"
+    assert_eq "$(cat "${g}/os_desc/b_vendor_code")" "0xCD" "os desc vendor code"
+    assert_eq "$(cat "${g}/os_desc/qw_sign")" "MSFT100" "os desc signature"
+    assert_eq "$(cat "${g}/functions/${USB_RNDIS_FUNC}/class")" "e0" "rndis class"
+    assert_eq "$(cat "${g}/functions/${USB_RNDIS_FUNC}/subclass")" "01" "rndis subclass"
+    assert_eq "$(cat "${g}/functions/${USB_RNDIS_FUNC}/protocol")" "03" "rndis protocol"
+    assert_eq "$(cat "${g}/functions/${USB_RNDIS_FUNC}/os_desc/interface.rndis/compatible_id")" "RNDIS" "rndis compatible id"
+    assert_eq "$(cat "${g}/functions/${USB_RNDIS_FUNC}/os_desc/interface.rndis/sub_compatible_id")" "5162001" "rndis sub compatible id"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "${USB_TEST_IMAGE}" "mounted image"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "1" "media ro flag"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "media cdrom flag"
+}
+
+test_normal_ncm_network_descriptor(){
+    base=$(new_env)
+    touch "${base}/boot/usb.ncm"
+    touch "${base}/boot/usb.rndis0"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_link "${g}/configs/c.1/${USB_NCM_FUNC}" "functions/${USB_NCM_FUNC}"
+    assert_no_file "${g}/configs/c.1/${USB_RNDIS_FUNC}"
+    assert_link "${g}/os_desc/c.1" "configs/c.1"
+    assert_eq "$(cat "${g}/os_desc/use")" "1" "ncm os desc use"
+    assert_eq "$(cat "${g}/functions/${USB_NCM_FUNC}/os_desc/interface.ncm/compatible_id")" "WINNCM" "ncm compatible id"
 }
 
 test_hid_only_descriptors_and_no_wake(){
@@ -296,6 +323,7 @@ test_normal_bios_flag_keeps_only_boot_hid_interfaces
 test_normal_disable_hid_removes_hid_functions
 test_normal_legacy_mass_storage
 test_normal_mounted_image_and_network
+test_normal_ncm_network_descriptor
 test_hid_only_descriptors_and_no_wake
 test_uses_one_udc
 test_stop_unbinds_and_sets_host_role
