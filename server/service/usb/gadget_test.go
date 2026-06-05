@@ -182,6 +182,48 @@ func TestSetVirtualMediaEnabledSetsFunctionDefaults(t *testing.T) {
 	assertSymlink(t, MassStorageLink, MassStorageFunction)
 }
 
+func TestSetVirtualMediaEnabledClearsStaleMediaState(t *testing.T) {
+	withFakeGadget(t)
+	writeFile(t, LUNFile, LegacyNoMediaImage)
+	writeFile(t, LUNRO, "1")
+	writeFile(t, LUNCDROM, "1")
+	writeFile(t, LUNInquiryString, lunInquiry(cdromInquiry))
+
+	if err := SetVirtualMediaEnabled(&fakeHID{}, true); err != nil {
+		t.Fatal(err)
+	}
+
+	assertFile(t, LUNFile, "\n")
+	assertFile(t, LUNRO, "0")
+	assertFile(t, LUNCDROM, "0")
+	assertContains(t, LUNInquiryString, massStorageInquiry)
+}
+
+func TestSetVirtualMediaEnabledIsIdempotent(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+
+	if err := SetVirtualMediaEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetVirtualMediaEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetVirtualMediaEnabled(hid, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetVirtualMediaEnabled(hid, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if Exists(MassStorageFlag) {
+		t.Fatal("media flag still exists after repeated disable")
+	}
+	if Exists(MassStorageLink) {
+		t.Fatal("media link still exists after repeated disable")
+	}
+}
+
 func TestVirtualMediaAndDataDiskAreIndependent(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
