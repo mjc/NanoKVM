@@ -10,6 +10,18 @@ using namespace maix::sys;
 extern kvm_sys_state_t kvm_sys_state;
 extern kvm_oled_state_t kvm_oled_state;
 
+static const char *USB_UDC_STATE = "/sys/class/udc/4340000.usb/state";
+static const char *USB_HID0_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/hid.GS0";
+static const char *USB_HID1_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/hid.GS1";
+static const char *USB_HID2_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/hid.GS2";
+static const char *USB_MEDIA_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0";
+static const char *USB_DATA_DISK_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk1";
+
+static int path_exists(const char *path)
+{
+	return access(path, F_OK) == 0;
+}
+
 int get_nic_state(const char* interface_name)
 {
 	int sock;
@@ -213,7 +225,13 @@ void kvm_update_usb_state()
 	FILE *fp;
 	int file_size;
 	uint8_t RW_Data[10];		
-	fp = fopen("/sys/class/udc/4340000.usb/state", "r");
+	fp = fopen(USB_UDC_STATE, "r");
+	if(fp == NULL) {
+		kvm_sys_state.usb_state = -1;
+		kvm_sys_state.hid_state = 0;
+		kvm_sys_state.udisk_state = 0;
+		return;
+	}
 	fseek(fp, 0, SEEK_END);
 	file_size = ftell(fp); 
 	fseek(fp, 0, SEEK_SET);
@@ -224,10 +242,13 @@ void kvm_update_usb_state()
 	else kvm_sys_state.usb_state = -1;
 	// hid_state & udisk_state (rndis_state单独处理)
 	if(kvm_sys_state.usb_state == 1){
-		if(access("/sys/kernel/config/usb_gadget/g0/configs/c.1/hid.GS*", F_OK) == 0) 
-			kvm_sys_state.hid_state = 1;
-		if(access("/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0", F_OK) == 0) 
-			kvm_sys_state.udisk_state = 1;
+		kvm_sys_state.hid_state =
+			path_exists(USB_HID0_LINK) ||
+			path_exists(USB_HID1_LINK) ||
+			path_exists(USB_HID2_LINK);
+		kvm_sys_state.udisk_state =
+			path_exists(USB_MEDIA_LINK) ||
+			path_exists(USB_DATA_DISK_LINK);
 	} else {
 		kvm_sys_state.hid_state = 0;
 		kvm_sys_state.udisk_state = 0;
