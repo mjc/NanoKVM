@@ -381,6 +381,19 @@ test_normal_data_disk_uses_mass_storage_slot(){
     assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Data Disk" "data disk inquiry"
 }
 
+test_normal_legacy_media_backing_is_no_media(){
+    base=$(new_env)
+    printf '%s' "${USB_DATA_DISK_BACKING}" > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.media0.cdrom"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "" "legacy media backing"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "0" "legacy media ro flag"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "legacy media cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Mass Storage" "legacy media inquiry"
+}
+
 test_normal_mounted_image_and_network(){
     base=$(new_env)
     printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
@@ -495,6 +508,7 @@ test_normal_bios_flag_keeps_only_boot_hid_interfaces
 test_normal_disable_hid_removes_hid_functions
 test_normal_media_wins_over_data_disk
 test_normal_data_disk_uses_mass_storage_slot
+test_normal_legacy_media_backing_is_no_media
 test_normal_mounted_image_and_network
 test_normal_ncm_network_descriptor
 test_hid_only_descriptors_and_no_wake
