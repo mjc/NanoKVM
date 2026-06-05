@@ -33,7 +33,6 @@ start_usb_dev(){
     if [ -e "${USB_BOOT_DIR}/usb.media0" ]
     then
         mkdir "functions/${USB_MASS_STORAGE_FUNC}"
-        ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
         echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable"
         if [ -e "${USB_BOOT_DIR}/usb.media0.ro" ]
         then
@@ -46,15 +45,16 @@ start_usb_dev(){
         then
             cat "${USB_BOOT_DIR}/usb.media0" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
         fi
+        ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
     fi
 
     if [ -e "${USB_BOOT_DIR}/usb.disk0" ]
     then
         mkdir "functions/${USB_DATA_DISK_FUNC}"
-        ln -s "functions/${USB_DATA_DISK_FUNC}" configs/c.1/
         echo 1 > "functions/${USB_DATA_DISK_FUNC}/lun.0/removable"
         printf '%s' "${USB_DATA_DISK_INQUIRY}" > "functions/${USB_DATA_DISK_FUNC}/lun.0/inquiry_string"
         printf '%s' "${USB_DATA_DISK_BACKING}" > "functions/${USB_DATA_DISK_FUNC}/lun.0/file"
+        ln -s "functions/${USB_DATA_DISK_FUNC}" configs/c.1/
     fi
 
     bind_first_udc

@@ -101,6 +101,7 @@ setup_fake_configfs_tools(){
 
     real_mkdir=$(command -v mkdir)
     real_rmdir=$(command -v rmdir)
+    real_ln=$(command -v ln)
 
     cat > "${fake_bin}/mkdir" <<EOF
 #!/bin/sh
@@ -194,7 +195,38 @@ done
 "${real_rmdir}" "\$@"
 EOF
 
-    chmod +x "${fake_bin}/mkdir" "${fake_bin}/rmdir"
+    cat > "${fake_bin}/ln" <<EOF
+#!/bin/sh
+check_nonempty(){
+    [ -s "\$1" ] || {
+        echo "link before configfs attr is populated: \$1" >&2
+        exit 1
+    }
+}
+case "\$*" in
+  "-s functions/hid."*)
+    func="\$2"
+    check_nonempty "\${func}/subclass"
+    check_nonempty "\${func}/protocol"
+    check_nonempty "\${func}/report_length"
+    check_nonempty "\${func}/report_desc"
+    ;;
+  "-s functions/mass_storage.disk0"*)
+    func="\$2"
+    check_nonempty "\${func}/lun.0/removable"
+    check_nonempty "\${func}/lun.0/inquiry_string"
+    ;;
+  "-s functions/mass_storage.disk1"*)
+    func="\$2"
+    check_nonempty "\${func}/lun.0/removable"
+    check_nonempty "\${func}/lun.0/inquiry_string"
+    check_nonempty "\${func}/lun.0/file"
+    ;;
+esac
+"${real_ln}" "\$@"
+EOF
+
+    chmod +x "${fake_bin}/mkdir" "${fake_bin}/rmdir" "${fake_bin}/ln"
 
     TEST_COMMON_SCRIPT="${base}/S03usb-common"
     awk -v fake_bin="${fake_bin}" '
