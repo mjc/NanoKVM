@@ -45,6 +45,10 @@ var (
 	ActiveInitScript  = "/etc/init.d/S03usbdev"
 
 	LegacyNoMediaImage = "/dev/mmcblk0p3"
+
+	massStorageInquiry = "USB Mass Storage"
+	cdromInquiry       = "USB CD/DVD-ROM"
+	dataDiskInquiry    = "USB Data Disk"
 )
 
 const (
@@ -136,7 +140,13 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 			if err := EnsureFile(MassStorageFlag); err != nil {
 				return err
 			}
-			return ensureMassStorageLink()
+			if err := ensureMassStorageLink(); err != nil {
+				return err
+			}
+			if err := DetachLUN(); err != nil {
+				return err
+			}
+			return setMassStorageLUN("", false)
 		}
 
 		errs := []error{
@@ -209,31 +219,7 @@ func SetLUNImage(h HIDController, image string, cdrom bool) error {
 			return err
 		}
 
-		flag := "0"
-		if image != "" && cdrom {
-			flag = "1"
-		}
-
-		if err := WriteString(LUNRO, flag); err != nil {
-			return fmt.Errorf("set read-only flag: %w", err)
-		}
-		if err := WriteString(LUNCDROM, flag); err != nil {
-			return fmt.Errorf("set cdrom flag: %w", err)
-		}
-
-		inquiryProduct := "USB Mass Storage"
-		if flag == "1" {
-			inquiryProduct = "USB CD/DVD-ROM"
-		}
-		inquiry := fmt.Sprintf("%-8s%-16s%04x", "NanoKVM", inquiryProduct, 0x0520)
-		if err := WriteString(LUNInquiryString, inquiry); err != nil {
-			return fmt.Errorf("set inquiry string: %w", err)
-		}
-
-		if image == "" {
-			return nil
-		}
-		return WriteString(LUNFile, image)
+		return setMassStorageLUN(image, cdrom)
 	})
 }
 
@@ -316,6 +302,33 @@ func ClearString(path string) error {
 	return nil
 }
 
+func lunInquiry(product string) string {
+	return fmt.Sprintf("%-8s%-16s%04x", "NanoKVM", product, 0x0520)
+}
+
+func setMassStorageLUN(image string, cdrom bool) error {
+	flag := "0"
+	inquiryProduct := massStorageInquiry
+	if image != "" && cdrom {
+		flag = "1"
+		inquiryProduct = cdromInquiry
+	}
+
+	if err := WriteString(LUNRO, flag); err != nil {
+		return fmt.Errorf("set read-only flag: %w", err)
+	}
+	if err := WriteString(LUNCDROM, flag); err != nil {
+		return fmt.Errorf("set cdrom flag: %w", err)
+	}
+	if err := WriteString(LUNInquiryString, lunInquiry(inquiryProduct)); err != nil {
+		return fmt.Errorf("set inquiry string: %w", err)
+	}
+	if image == "" {
+		return nil
+	}
+	return WriteString(LUNFile, image)
+}
+
 func ensureMassStorageFunction() error {
 	if !Exists(MassStorageFunction) {
 		if err := os.Mkdir(MassStorageFunction, 0o777); err != nil {
@@ -325,7 +338,7 @@ func ensureMassStorageFunction() error {
 	if err := WriteString(filepath.Join(LUNPath, "removable"), "1"); err != nil {
 		return fmt.Errorf("set removable flag: %w", err)
 	}
-	if err := WriteString(LUNInquiryString, fmt.Sprintf("%-8s%-16s%04x", "NanoKVM", "USB Mass Storage", 0x0520)); err != nil {
+	if err := WriteString(LUNInquiryString, lunInquiry(massStorageInquiry)); err != nil {
 		return fmt.Errorf("set inquiry string: %w", err)
 	}
 	return nil
@@ -360,7 +373,7 @@ func ensureDataDiskFunction() error {
 	if err := WriteString(filepath.Join(DataDiskLUNPath, "removable"), "1"); err != nil {
 		return fmt.Errorf("set data disk removable flag: %w", err)
 	}
-	if err := WriteString(filepath.Join(DataDiskLUNPath, "inquiry_string"), fmt.Sprintf("%-8s%-16s%04x", "NanoKVM", "USB Data Disk", 0x0520)); err != nil {
+	if err := WriteString(filepath.Join(DataDiskLUNPath, "inquiry_string"), lunInquiry(dataDiskInquiry)); err != nil {
 		return fmt.Errorf("set data disk inquiry string: %w", err)
 	}
 	return nil
