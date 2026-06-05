@@ -326,7 +326,16 @@ test_normal_media_and_data_disk_split(){
     assert_link "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}" "functions/${USB_MASS_STORAGE_FUNC}"
     assert_link "${g}/configs/c.1/${USB_DATA_DISK_FUNC}" "functions/${USB_DATA_DISK_FUNC}"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "" "empty media file"
-    assert_eq "$(cat "${g}/functions/${USB_DATA_DISK_FUNC}/lun.0/file")" "${USB_DATA_DISK_BACKING}" "data disk backing"
+    assert_text_bytes "${g}/functions/${USB_DATA_DISK_FUNC}/lun.0/file" "${USB_DATA_DISK_BACKING}"
+}
+
+test_normal_legacy_media_backing_is_no_media(){
+    base=$(new_env)
+    printf '%s' "${USB_DATA_DISK_BACKING}" > "${base}/boot/usb.media0"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "" "legacy media backing"
 }
 
 test_normal_mounted_image_and_network(){
@@ -419,6 +428,7 @@ test_normal_hid_descriptors
 test_normal_bios_flag_keeps_only_boot_hid_interfaces
 test_normal_disable_hid_removes_hid_functions
 test_normal_media_and_data_disk_split
+test_normal_legacy_media_backing_is_no_media
 test_normal_mounted_image_and_network
 test_hid_only_descriptors_and_no_wake
 test_uses_one_udc
