@@ -17,24 +17,24 @@ export const Image = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-  const [mode, setMode] = useState('mass-storage');
+  const [mode, setMode] = useState('usb-disk');
 
   const modes = [
     {
-      value: 'mass-storage',
+      value: 'usb-disk',
       label: (
         <div className="flex items-center space-x-1">
           <HardDriveIcon size={16} />
-          <span>Mass Storage</span>
+          <span>USB disk</span>
         </div>
       )
     },
     {
-      value: 'cd-rom',
+      value: 'iso-cdrom',
       label: (
         <div className="flex items-center space-x-1">
           <DiscIcon size={16} />
-          <span>CD ROM</span>
+          <span>ISO CD-ROM</span>
         </div>
       )
     }
@@ -49,7 +49,7 @@ export const Image = () => {
 
     api.getCdRom().then((rsp) => {
       if (rsp.code === 0) {
-        setMode(rsp.data?.cdrom === 1 ? 'cd-rom' : 'mass-storage');
+        setMode(rsp.data?.cdrom === 1 ? 'iso-cdrom' : 'usb-disk');
       }
     });
   }, []);
@@ -89,7 +89,7 @@ export const Image = () => {
 
           <Divider style={{ margin: '24px 0 0 0' }} />
 
-          <Images isOpen={isModalOpen} cdrom={mode === 'cd-rom'} setIsMounted={setIsMounted} />
+          <Images isOpen={isModalOpen} cdrom={mode === 'iso-cdrom'} setIsMounted={setIsMounted} />
         </div>
       </Modal>
     </>

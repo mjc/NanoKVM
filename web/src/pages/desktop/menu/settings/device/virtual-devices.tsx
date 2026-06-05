@@ -9,9 +9,10 @@ export const VirtualDevices = () => {
   const { t } = useTranslation();
 
   const [isHidOnlyMode, setIsHidOnlyMode] = useState(false);
+  const [isMediaEnabled, setIsMediaEnabled] = useState(false);
   const [isDiskEnabled, setIsDiskEnabled] = useState(false);
   const [isNetworkEnabled, setIsNetworkEnabled] = useState(false);
-  const [loading, setLoading] = useState<'' | 'disk' | 'network'>('');
+  const [loading, setLoading] = useState<'' | 'media' | 'disk' | 'network'>('');
 
   useEffect(() => {
     getHidOnlyMode();
@@ -40,13 +41,14 @@ export const VirtualDevices = () => {
       }
 
       setIsDiskEnabled(rsp.data.disk);
+      setIsMediaEnabled(rsp.data.media);
       setIsNetworkEnabled(rsp.data.network);
     } catch (err) {
       console.log(err);
     }
   }
 
-  async function update(device: 'disk' | 'network') {
+  async function update(device: 'media' | 'disk' | 'network') {
     if (loading) return;
     setLoading(device);
 
@@ -80,6 +82,20 @@ export const VirtualDevices = () => {
 
   return (
     <>
+      {/* Virtual Media */}
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col space-y-1">
+          <span>{t('settings.device.media')}</span>
+          <span className="text-xs text-neutral-500">{t('settings.device.mediaDesc')}</span>
+        </div>
+
+        <Switch
+          checked={isMediaEnabled}
+          loading={loading === 'media'}
+          onChange={() => update('media')}
+        />
+      </div>
+
       {/* Virtual Disk */}
       <div className="flex items-center justify-between">
         <div className="flex flex-col space-y-1">
