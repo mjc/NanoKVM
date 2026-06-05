@@ -1,9 +1,7 @@
 package hid
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -14,21 +12,12 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"NanoKVM-Server/proto"
+	"NanoKVM-Server/service/usb"
 )
 
 const (
-	ModeNormal      = "normal"
-	ModeHidOnly     = "hid-only"
-	DefaultModeFlag = "/sys/kernel/config/usb_gadget/g0/bcdDevice"
-)
-
-var (
-	modeFlag = DefaultModeFlag
-
-	ModeNormalScript  = "/kvmapp/system/init.d/S03usbdev"
-	ModeHidOnlyScript = "/kvmapp/system/init.d/S03usbhid"
-
-	USBDevScript = "/etc/init.d/S03usbdev"
+	ModeNormal  = "normal"
+	ModeHidOnly = "hid-only"
 )
 
 var modeMap = map[string]string{
@@ -77,9 +66,9 @@ func (s *Service) SetHidMode(c *gin.Context) {
 		h.Unlock()
 	}()
 
-	srcScript := ModeNormalScript
+	srcScript := usb.NormalInitScript
 	if req.Mode == ModeHidOnly {
-		srcScript = ModeHidOnlyScript
+		srcScript = usb.HIDOnlyInitScript
 	}
 
 	if err := copyModeFile(srcScript); err != nil {
@@ -121,23 +110,7 @@ func (s *Service) RecoverUSB(c *gin.Context) {
 }
 
 func ResetUSBPHY() error {
-	h := GetHid()
-	h.Lock()
-	h.CloseNoLock()
-	defer h.Unlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := exec.CommandContext(ctx, "sh", USBDevScript, "restart_phy").Run(); err != nil {
-		return fmt.Errorf("restart usb phy: %w", err)
-	}
-
-	if err := h.OpenNoLockWithRetry(hidReopenTimeout, hidReopenRetryDelay); err != nil {
-		return fmt.Errorf("reopen HID devices after usb phy reset: %w", err)
-	}
-
-	return nil
+	return usb.RestartPHY(GetHid())
 }
 
 func copyModeFile(srcScript string) error {
@@ -160,7 +133,7 @@ func copyModeFile(srcScript string) error {
 	// create and copy to temporary file
 	tmpFile, err := os.CreateTemp("/etc/init.d/", ".S03usbdev-")
 	if err != nil {
-		log.Errorf("failed to create temp %s: %s", USBDevScript, err)
+		log.Errorf("failed to create temp %s: %s", usb.ActiveInitScript, err)
 		return err
 	}
 	tmpPath := tmpFile.Name()
@@ -193,19 +166,19 @@ func copyModeFile(srcScript string) error {
 	}
 
 	// replace the target file with the temporary file
-	if err := os.Rename(tmpPath, USBDevScript); err != nil {
+	if err := os.Rename(tmpPath, usb.ActiveInitScript); err != nil {
 		log.Errorf("failed to rename %s: %s", tmpPath, err)
 		return err
 	}
 
-	log.Debugf("copy %s to %s successful", srcScript, USBDevScript)
+	log.Debugf("copy %s to %s successful", srcScript, usb.ActiveInitScript)
 	return nil
 }
 
 func getHidMode() (string, error) {
-	data, err := os.ReadFile(modeFlag)
+	data, err := os.ReadFile(usb.ModeFlag)
 	if err != nil {
-		log.Errorf("failed to read %s: %s", modeFlag, err)
+		log.Errorf("failed to read %s: %s", usb.ModeFlag, err)
 		return "", err
 	}
 
