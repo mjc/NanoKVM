@@ -1,0 +1,55 @@
+#!/bin/sh
+
+write_usb_strings(){
+    mkdir strings/0x409
+    printf '%s' '0123456789ABCDEF' > strings/0x409/serialnumber
+    printf '%s' 'sipeed' > strings/0x409/manufacturer
+    printf '%s' 'NanoKVM' > strings/0x409/product
+}
+
+write_usb_config_string(){
+    mkdir configs/c.1/strings/0x409
+    printf '%s' 'NanoKVM' > configs/c.1/strings/0x409/configuration
+}
+
+set_hid_wakeup(){
+    func="$1"
+    if [ ! -e /boot/usb.notwakeup ] && [ -e "functions/${func}/wakeup_on_write" ]
+    then
+        echo 1 > "functions/${func}/wakeup_on_write"
+    fi
+}
+
+add_hid_function(){
+    func="$1"
+    subclass="$2"
+    protocol="$3"
+    report_length="$4"
+    report_desc="$5"
+
+    mkdir "functions/${func}"
+    if [ -n "${subclass}" ]
+    then
+        echo "${subclass}" > "functions/${func}/subclass"
+    fi
+    set_hid_wakeup "${func}"
+    echo "${protocol}" > "functions/${func}/protocol"
+    echo "${report_length}" > "functions/${func}/report_length"
+    echo -ne "${report_desc}" > "functions/${func}/report_desc"
+    ln -s "functions/${func}" configs/c.1
+}
+
+bind_first_udc(){
+    ls /sys/class/udc/ | cat > UDC
+    echo device > /proc/cviusb/otg_role
+}
+
+unbind_udc(){
+    echo '' > /sys/kernel/config/usb_gadget/g0/UDC
+}
+
+restart_udc(){
+    echo > /sys/kernel/config/usb_gadget/g0/UDC
+    sleep 1
+    ls /sys/class/udc/ | cat > /sys/kernel/config/usb_gadget/g0/UDC
+}
