@@ -1,7 +1,7 @@
 package hid
 
 import (
-	"NanoKVM-Server/proto"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,12 +12,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
+
+	"NanoKVM-Server/proto"
 )
 
 const (
 	ModeNormal  = "normal"
 	ModeHidOnly = "hid-only"
-	ModeFlag    = "/sys/kernel/config/usb_gadget/g0/bcdDevice"
+)
+
+var (
+	ModeFlag = "/sys/kernel/config/usb_gadget/g0/bcdDevice"
 
 	ModeNormalScript  = "/kvmapp/system/init.d/S03usbdev"
 	ModeHidOnlyScript = "/kvmapp/system/init.d/S03usbhid"
@@ -120,8 +125,10 @@ func ResetUSBPHY() error {
 	h.CloseNoLock()
 	defer h.Unlock()
 
-	command := fmt.Sprintf("%s restart_phy", USBDevScript)
-	if err := exec.Command("sh", "-c", command).Run(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := exec.CommandContext(ctx, "sh", USBDevScript, "restart_phy").Run(); err != nil {
 		return fmt.Errorf("restart usb phy: %w", err)
 	}
 
