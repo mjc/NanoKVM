@@ -34,7 +34,7 @@ func (payload) Generate(rand *rand.Rand, _ int) reflect.Value {
 type safeName string
 
 func (safeName) Generate(rand *rand.Rand, _ int) reflect.Value {
-	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
 	size := 1 + rand.Intn(32)
 	buf := make([]byte, size)
 	for i := range buf {
