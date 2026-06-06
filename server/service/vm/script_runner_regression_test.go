@@ -158,6 +158,22 @@ func TestScriptCommandPreservesShellScriptInterpreter(t *testing.T) {
 	}
 }
 
+func TestRunScriptForegroundFallsBackForShellScriptWithoutShebang(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "plain.sh")
+	if err := os.WriteFile(target, []byte("echo script-ran\n"), 0o700); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	output, err := runScriptForeground("plain.sh", target)
+	if err != nil {
+		t.Fatalf("run script: %v, output=%s", err, output)
+	}
+
+	if string(output) != "script-ran\n" {
+		t.Fatalf("output = %q, want %q", output, "script-ran\n")
+	}
+}
+
 func TestScriptCommandRunsPythonViaInterpreter(t *testing.T) {
 	target := path.Join(ScriptDirectory, "tool.py")
 	cmd := scriptCommand("tool.py", target)

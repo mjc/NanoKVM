@@ -1,12 +1,14 @@
 package vm
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -103,16 +105,12 @@ func (s *Service) RunScript(c *gin.Context) {
 	}
 
 	var output []byte
-	cmd := scriptCommand(filename, target)
 
 	if req.Type == "foreground" {
-		output, err = cmd.CombinedOutput()
+		output, err = runScriptForeground(filename, target)
 	} else {
-		cmd.Stdout = nil
-		cmd.Stderr = nil
 		go func() {
-			err := cmd.Run()
-			if err != nil {
+			if err := runScriptBackground(filename, target); err != nil {
 				log.Errorf("run script %s in background failed: %s", filename, err)
 			}
 		}()
@@ -216,4 +214,28 @@ func scriptCommand(filename string, target string) *exec.Cmd {
 	}
 
 	return exec.Command(target)
+}
+
+func runScriptForeground(filename string, target string) ([]byte, error) {
+	output, err := scriptCommand(filename, target).CombinedOutput()
+	if shouldRetryShellScriptWithSh(filename, err) {
+		return exec.Command("sh", target).CombinedOutput()
+	}
+
+	return output, err
+}
+
+func runScriptBackground(filename string, target string) error {
+	err := scriptCommand(filename, target).Run()
+	if shouldRetryShellScriptWithSh(filename, err) {
+		return exec.Command("sh", target).Run()
+	}
+
+	return err
+}
+
+func shouldRetryShellScriptWithSh(filename string, err error) bool {
+	return err != nil &&
+		strings.HasSuffix(strings.ToLower(filename), ".sh") &&
+		errors.Is(err, syscall.ENOEXEC)
 }
