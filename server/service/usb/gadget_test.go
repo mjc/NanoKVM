@@ -206,6 +206,28 @@ func TestSetLUNImageFailurePreservesMountedMedia(t *testing.T) {
 	assertFile(t, LUNFile, "/data/old.iso")
 }
 
+func TestSetLUNImageFailureDoesNotExposeUnpersistedMedia(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := os.Remove(LUNRO); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNRO, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetLUNImage(hid, "/data/installer.iso", true); err == nil {
+		t.Fatal("SetLUNImage succeeded despite unwritable ro flag")
+	}
+
+	if Exists(MassStorageLink) {
+		t.Fatal("failed image mount left unpersisted media link")
+	}
+	if Exists(MassStorageFlag) {
+		t.Fatal("failed image mount left media flag behind")
+	}
+}
+
 func TestSetLUNImageDetachFailureDoesNotCreateMediaState(t *testing.T) {
 	withFakeGadget(t)
 	if err := os.Remove(UDCPath); err != nil {
@@ -593,6 +615,28 @@ func TestSetVirtualMediaEnabledFailurePreservesDataDisk(t *testing.T) {
 	}
 }
 
+func TestSetVirtualMediaEnabledFailureDoesNotExposeUnpersistedMedia(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := os.Remove(LUNRO); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNRO, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetVirtualMediaEnabled(hid, true); err == nil {
+		t.Fatal("SetVirtualMediaEnabled succeeded despite unwritable ro flag")
+	}
+
+	if Exists(MassStorageLink) {
+		t.Fatal("failed media enable left unpersisted media link")
+	}
+	if Exists(MassStorageFlag) {
+		t.Fatal("failed media enable left media flag behind")
+	}
+}
+
 func TestSetVirtualMediaEnabledDetachFailureDoesNotCreateMediaState(t *testing.T) {
 	withFakeGadget(t)
 	if err := os.Remove(UDCPath); err != nil {
@@ -692,6 +736,28 @@ func TestSetDataDiskEnabledFailurePreservesMedia(t *testing.T) {
 	}
 	if Exists(DataDiskFlag) {
 		t.Fatal("failed data disk enable left data disk flag behind")
+	}
+}
+
+func TestSetDataDiskEnabledFailureDoesNotExposeUnpersistedDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := os.Remove(LUNFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNFile, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetDataDiskEnabled(hid, true); err == nil {
+		t.Fatal("SetDataDiskEnabled succeeded despite unwritable LUN file")
+	}
+
+	if Exists(DataDiskFlag) {
+		t.Fatal("failed data disk enable left data disk flag behind")
+	}
+	if Exists(DataDiskLink) {
+		t.Fatal("failed data disk enable left unpersisted data disk link")
 	}
 }
 
