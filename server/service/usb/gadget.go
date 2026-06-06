@@ -187,7 +187,7 @@ func SetDataDiskEnabled(h HIDController, enabled bool) error {
 		if !Exists(DataDiskFlag) {
 			return nil
 		}
-		if Exists(MassStorageFlag) {
+		if VirtualMediaEnabled() {
 			return RemoveIfExists(DataDiskFlag)
 		}
 		errs := []error{
