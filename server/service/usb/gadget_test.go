@@ -1171,6 +1171,110 @@ func TestEnabledStateTreatsLegacyMediaBackingAsDataDisk(t *testing.T) {
 	}
 }
 
+func TestMassStorageOwnerClassifiesSharedSlot(t *testing.T) {
+	tests := []struct {
+		name          string
+		link          bool
+		mediaFlag     *string
+		dataDiskFlag  bool
+		wantOwner     massStorageOwner
+		wantMedia     bool
+		wantDataDisk  bool
+		wantMounted   string
+		wantCDROMFlag int64
+	}{
+		{
+			name:         "unlinked boot flags are stale",
+			mediaFlag:    stringPtr("/data/installer.iso"),
+			dataDiskFlag: true,
+			wantOwner:    massStorageOwnerNone,
+		},
+		{
+			name:          "empty media owns linked slot",
+			link:          true,
+			mediaFlag:     stringPtr(""),
+			wantOwner:     massStorageOwnerMedia,
+			wantMedia:     true,
+			wantMounted:   "",
+			wantCDROMFlag: 0,
+		},
+		{
+			name:          "mounted image owns linked slot as media",
+			link:          true,
+			mediaFlag:     stringPtr("/data/installer.iso"),
+			dataDiskFlag:  true,
+			wantOwner:     massStorageOwnerMedia,
+			wantMedia:     true,
+			wantMounted:   "/data/installer.iso",
+			wantCDROMFlag: 1,
+		},
+		{
+			name:         "legacy media backing belongs to data disk",
+			link:         true,
+			mediaFlag:    stringPtr(LegacyNoMediaImage),
+			dataDiskFlag: true,
+			wantOwner:    massStorageOwnerDataDisk,
+			wantDataDisk: true,
+		},
+		{
+			name:         "data flag without media flag owns linked slot",
+			link:         true,
+			dataDiskFlag: true,
+			wantOwner:    massStorageOwnerDataDisk,
+			wantDataDisk: true,
+		},
+		{
+			name:      "legacy media without data flag is ownerless",
+			link:      true,
+			mediaFlag: stringPtr(LegacyNoMediaImage),
+			wantOwner: massStorageOwnerNone,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withFakeGadget(t)
+			writeFile(t, LUNFile, "/data/installer.iso")
+			writeFile(t, LUNCDROM, "1\n")
+			if tt.link {
+				if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.mediaFlag != nil {
+				writeFile(t, MassStorageFlag, *tt.mediaFlag)
+			}
+			if tt.dataDiskFlag {
+				writeFile(t, DataDiskFlag, "")
+			}
+
+			if got := currentMassStorageOwner(); got != tt.wantOwner {
+				t.Fatalf("currentMassStorageOwner() = %v, want %v", got, tt.wantOwner)
+			}
+			if got := VirtualMediaEnabled(); got != tt.wantMedia {
+				t.Fatalf("VirtualMediaEnabled() = %v, want %v", got, tt.wantMedia)
+			}
+			if got := DataDiskEnabled(); got != tt.wantDataDisk {
+				t.Fatalf("DataDiskEnabled() = %v, want %v", got, tt.wantDataDisk)
+			}
+			mounted, err := MountedImage()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mounted != tt.wantMounted {
+				t.Fatalf("MountedImage() = %q, want %q", mounted, tt.wantMounted)
+			}
+			cdrom, err := CDROMFlag()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cdrom != tt.wantCDROMFlag {
+				t.Fatalf("CDROMFlag() = %d, want %d", cdrom, tt.wantCDROMFlag)
+			}
+		})
+	}
+}
+
 func TestWithDetachedUDCReattachesAfterMutationError(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
@@ -1254,6 +1358,10 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o666); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func assertFile(t *testing.T, path, want string) {
