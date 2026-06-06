@@ -49,7 +49,7 @@ func (s *Service) GetScripts(c *gin.Context) {
 func (s *Service) UploadScript(c *gin.Context) {
 	var rsp proto.Response
 
-	_, header, err := c.Request.FormFile("file")
+	header, err := c.FormFile("file")
 	if err != nil {
 		rsp.ErrRsp(c, -1, "bad request")
 		return
@@ -172,7 +172,6 @@ func resolveScriptPath(name string) (string, string, error) {
 	}
 
 	if strings.ContainsRune(filename, '\x00') ||
-		strings.Contains(filename, "..") ||
 		filepath.IsAbs(filename) ||
 		filepath.Base(filename) != filename ||
 		!scriptNamePattern.MatchString(filename) ||
@@ -216,5 +215,5 @@ func scriptCommand(filename string, target string) *exec.Cmd {
 		return exec.Command("python", target)
 	}
 
-	return exec.Command("sh", target)
+	return exec.Command(target)
 }
