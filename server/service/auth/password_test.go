@@ -21,6 +21,14 @@ func TestChangePasswordRevokesTokensAfterSuccess(t *testing.T) {
 
 	var accountUsername string
 	var accountPassword string
+	previousGetAccount := getAccount
+	getAccount = func() (*Account, error) {
+		return &Account{Username: "admin", Password: hashPassword(t, "old-password")}, nil
+	}
+	t.Cleanup(func() {
+		getAccount = previousGetAccount
+	})
+
 	previousSetAccount := setAccount
 	setAccount = func(username string, hashedPassword string) error {
 		accountUsername = username
@@ -133,6 +141,9 @@ func TestChangePasswordDoesNotRevokeTokensWhenSavingPasswordFails(t *testing.T) 
 
 	var setAccountCalled bool
 	setPasswordChangeHooks(t, passwordChangeHooks{
+		getAccount: func() (*Account, error) {
+			return &Account{Username: "admin", Password: hashPassword(t, "old-password")}, nil
+		},
 		setAccount: func(username string, hashedPassword string) error {
 			setAccountCalled = true
 			return errors.New("save failed")
@@ -164,16 +175,21 @@ func TestChangePasswordDoesNotRevokeTokensWhenSavingPasswordFails(t *testing.T) 
 func TestChangePasswordDoesNotRevokeTokensWhenRootPasswordChangeFails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	var deletedAccount bool
+	oldPasswordHash := hashPassword(t, "old-password")
+	var savedAccounts []Account
 	setPasswordChangeHooks(t, passwordChangeHooks{
+		getAccount: func() (*Account, error) {
+			return &Account{Username: "admin", Password: oldPasswordHash}, nil
+		},
 		setAccount: func(username string, hashedPassword string) error {
+			savedAccounts = append(savedAccounts, Account{Username: username, Password: hashedPassword})
 			return nil
 		},
 		changeRootPassword: func(password string) error {
 			return errors.New("root password update failed")
 		},
 		delAccount: func() error {
-			deletedAccount = true
+			t.Fatal("failed password changes must not remove the stored account")
 			return nil
 		},
 		revokeTokens: func() {
@@ -187,8 +203,14 @@ func TestChangePasswordDoesNotRevokeTokensWhenRootPasswordChangeFails(t *testing
 	})
 
 	assertAuthResponse(t, w, -5, "failed to change password")
-	if !deletedAccount {
-		t.Fatal("expected stored account rollback when root password change fails")
+	if len(savedAccounts) != 2 {
+		t.Fatalf("saved accounts = %d, want new account save and previous account restore", len(savedAccounts))
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(savedAccounts[0].Password), []byte("changed-password")); err != nil {
+		t.Fatalf("first saved account does not contain changed password: %v", err)
+	}
+	if savedAccounts[1].Username != "admin" || savedAccounts[1].Password != oldPasswordHash {
+		t.Fatalf("restored account = %+v, want previous admin account", savedAccounts[1])
 	}
 }
 
@@ -281,6 +303,7 @@ func TestIsDefaultPasswordChanged(t *testing.T) {
 }
 
 type passwordChangeHooks struct {
+	getAccount         func() (*Account, error)
 	setAccount         func(username string, hashedPassword string) error
 	changeRootPassword func(password string) error
 	delAccount         func() error
@@ -291,17 +314,30 @@ func setPasswordChangeHooks(t *testing.T, hooks passwordChangeHooks) {
 	t.Helper()
 
 	previousSetAccount := setAccount
+	previousGetAccount := getAccount
 	previousChangeRootPassword := changeRootPassword
 	previousDelAccount := delAccount
 	previousRevokeTokens := revokeTokensAfterPasswordChange
 
-	setAccount = hooks.setAccount
-	changeRootPassword = hooks.changeRootPassword
-	delAccount = hooks.delAccount
-	revokeTokensAfterPasswordChange = hooks.revokeTokens
+	if hooks.getAccount != nil {
+		getAccount = hooks.getAccount
+	}
+	if hooks.setAccount != nil {
+		setAccount = hooks.setAccount
+	}
+	if hooks.changeRootPassword != nil {
+		changeRootPassword = hooks.changeRootPassword
+	}
+	if hooks.delAccount != nil {
+		delAccount = hooks.delAccount
+	}
+	if hooks.revokeTokens != nil {
+		revokeTokensAfterPasswordChange = hooks.revokeTokens
+	}
 
 	t.Cleanup(func() {
 		setAccount = previousSetAccount
+		getAccount = previousGetAccount
 		changeRootPassword = previousChangeRootPassword
 		delAccount = previousDelAccount
 		revokeTokensAfterPasswordChange = previousRevokeTokens

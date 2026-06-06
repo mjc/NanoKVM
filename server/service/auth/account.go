@@ -13,20 +13,22 @@ import (
 
 const AccountFile = "/etc/kvm/pwd"
 
+var accountFile = AccountFile
+
 type Account struct {
 	Username string `json:"username"`
-	Password string `json:"password"`	// should be named HashedPassword for clarity
+	Password string `json:"password"` // should be named HashedPassword for clarity
 }
 
 func GetAccount() (*Account, error) {
-	if _, err := os.Stat(AccountFile); err != nil {
+	if _, err := os.Stat(accountFile); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return getDefaultAccount(), nil
 		}
 		return nil, err
 	}
 
-	content, err := os.ReadFile(AccountFile)
+	content, err := os.ReadFile(accountFile)
 	if err != nil {
 		return nil, err
 	}
@@ -50,15 +52,23 @@ func SetAccount(username string, hashedPassword string) error {
 		return err
 	}
 
-	err = os.MkdirAll(filepath.Dir(AccountFile), 0o644)
+	err = os.MkdirAll(filepath.Dir(accountFile), 0o700)
 	if err != nil {
-		log.Errorf("create directory %s failed: %s", AccountFile, err)
+		log.Errorf("create directory %s failed: %s", accountFile, err)
+		return err
+	}
+	if err = os.Chmod(filepath.Dir(accountFile), 0o700); err != nil {
+		log.Errorf("set directory permissions %s failed: %s", accountFile, err)
 		return err
 	}
 
-	err = os.WriteFile(AccountFile, account, 0o644)
+	err = os.WriteFile(accountFile, account, 0o600)
 	if err != nil {
 		log.Errorf("write password failed: %s", err)
+		return err
+	}
+	if err = os.Chmod(accountFile, 0o600); err != nil {
+		log.Errorf("set password permissions failed: %s", err)
 		return err
 	}
 
@@ -95,7 +105,7 @@ func CompareAccount(username string, plainPassword string) bool {
 }
 
 func DelAccount() error {
-	if err := os.Remove(AccountFile); err != nil {
+	if err := os.Remove(accountFile); err != nil {
 		log.Errorf("failed to delete password: %s", err)
 		return err
 	}
