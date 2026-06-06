@@ -1,6 +1,7 @@
 package network
 
 import (
+	"NanoKVM-Server/utils"
 	"crypto/subtle"
 	"fmt"
 	"os"
@@ -159,7 +160,7 @@ func (s *Service) DisconnectWifi(c *gin.Context) {
 	time.Sleep(5 * time.Second)
 
 	_ = os.Remove(WiFiSSID)
-	_ = os.Remove(WiFiPasswd)
+	_ = utils.RemoveFileIfExists(WiFiPasswd)
 
 	rsp.OkRsp(c)
 	log.Debugf("stop wifi successfully")
@@ -171,7 +172,7 @@ func connect(ssid string, password string) error {
 		return err
 	}
 
-	if err := os.WriteFile(WiFiPasswd, []byte(password), 0o644); err != nil {
+	if err := utils.WritePrivateFile(WiFiPasswd, []byte(password)); err != nil {
 		log.Errorf("failed to save wifi password: %s", err)
 		return err
 	}
