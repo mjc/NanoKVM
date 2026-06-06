@@ -8,7 +8,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -37,6 +39,11 @@ func (s *Service) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	if err := validatePasswordChange(req.Username, password); err != nil {
+		rsp.ErrRsp(c, -2, "invalid password")
+		return
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		rsp.ErrRsp(c, -3, "failed to hash password")
@@ -60,6 +67,49 @@ func (s *Service) ChangePassword(c *gin.Context) {
 
 	rsp.OkRsp(c)
 	log.Debugf("change password success, username: %s", req.Username)
+}
+
+func validatePasswordChange(username string, password string) error {
+	if !isSafeAccountUsername(username) {
+		return errors.New("invalid username")
+	}
+	if !isSafePassword(username, password) {
+		return errors.New("invalid password")
+	}
+
+	return nil
+}
+
+func isSafeAccountUsername(username string) bool {
+	if username != strings.TrimSpace(username) {
+		return false
+	}
+	if strings.ContainsAny(username, `/\<>`) {
+		return false
+	}
+	if strings.ContainsFunc(username, func(r rune) bool {
+		return unicode.IsControl(r)
+	}) {
+		return false
+	}
+	if username == "" {
+		return false
+	}
+
+	return true
+}
+
+func isSafePassword(_ string, password string) bool {
+	if len([]byte(password)) > 72 {
+		return false
+	}
+	if strings.ContainsFunc(password, func(r rune) bool {
+		return unicode.IsControl(r)
+	}) {
+		return false
+	}
+
+	return true
 }
 
 func (s *Service) IsPasswordUpdated(c *gin.Context) {

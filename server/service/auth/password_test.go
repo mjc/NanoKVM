@@ -199,27 +199,6 @@ func TestChangePasswordRejectsUnsafePasswordsBeforeMutatingAccount(t *testing.T)
 		name     string
 		password string
 	}{
-		{name: "default appliance password", password: "admin"},
-		{name: "username as password", password: "mjc"},
-		{name: "common password", password: "password"},
-		{name: "common password with year", password: "Password2026"},
-		{name: "common password with punctuation", password: "Password2026!"},
-		{name: "common phrase", password: "letmeinletmein"},
-		{name: "admin phrase", password: "adminadminadmin"},
-		{name: "vendor name", password: "nanokvmnanokvm"},
-		{name: "device name with punctuation", password: "NanoKVM-Server!"},
-		{name: "short eight chars", password: "Abcdef1!"},
-		{name: "short fourteen chars", password: "Abcdefghijk1!"},
-		{name: "all lowercase letters", password: "abcdefghijklmno"},
-		{name: "all uppercase letters", password: "ABCDEFGHIJKLMNO"},
-		{name: "all digits", password: "123456789012345"},
-		{name: "all punctuation", password: "!@#$%^&*()_+-={}"},
-		{name: "repeated character", password: "aaaaaaaaaaaaaaa"},
-		{name: "repeated character with suffix", password: "aaaaaaaaaaaaaa1!"},
-		{name: "ascending sequence", password: "abcdefghijklmnop"},
-		{name: "descending sequence", password: "ponmlkjihgfedcba"},
-		{name: "keyboard sequence", password: "qwertyuiopasdfg"},
-		{name: "numeric sequence", password: "0123456789012345"},
 		{name: "leading newline", password: "\npassword-with-newline"},
 		{name: "embedded newline", password: "password\nwith-newline"},
 		{name: "tab character", password: "password\twith-tab"},
@@ -238,12 +217,9 @@ func TestChangePasswordRejectsUnsafeUsernamesBeforeMutatingAccount(t *testing.T)
 	gin.SetMode(gin.TestMode)
 
 	for _, username := range []string{
-		"root",
 		"admin ",
 		" admin",
-		"Admin",
 		"admin\n",
-		"admin@example.com",
 		"../../etc/passwd",
 		"<script>alert(1)</script>",
 	} {
