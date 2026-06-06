@@ -223,6 +223,8 @@ case "\$*" in
   "-s functions/mass_storage.disk0"*)
     func="\$2"
     check_nonempty "\${func}/lun.0/removable"
+    check_nonempty "\${func}/lun.0/ro"
+    check_nonempty "\${func}/lun.0/cdrom"
     check_nonempty "\${func}/lun.0/inquiry_string"
     ;;
 esac
