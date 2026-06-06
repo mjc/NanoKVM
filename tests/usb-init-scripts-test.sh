@@ -448,6 +448,7 @@ test_normal_mounted_cdrom_image_and_network(){
     base=$(new_env)
     printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
     touch "${base}/boot/usb.media0.cdrom"
+    touch "${base}/boot/usb.disk0"
     touch "${base}/boot/usb.rndis0"
     run_start "${NORMAL_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
@@ -457,6 +458,8 @@ test_normal_mounted_cdrom_image_and_network(){
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "1" "cdrom ro flag"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "1" "cdrom flag"
     assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB CD/DVD-ROM" "cdrom inquiry"
+    assert_no_file "${g}/configs/c.1/mass_storage.disk1"
+    assert_no_file "${g}/functions/mass_storage.disk1"
 }
 
 test_normal_ncm_network_descriptor(){
