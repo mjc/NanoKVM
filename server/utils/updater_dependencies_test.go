@@ -147,6 +147,50 @@ func TestDownloadFailures(t *testing.T) {
 	assertErrContains(t, Download(req, targetDir), "is a directory")
 }
 
+func TestDownloadRemovesFailedTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{
+			name: "status",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "nope", http.StatusServiceUnavailable)
+			},
+		},
+		{
+			name: "content-type",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				_, _ = w.Write([]byte("not firmware"))
+			},
+		},
+		{
+			name: "copy",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/gzip")
+				w.Header().Set("Content-Length", "8")
+				_, _ = w.Write([]byte("short"))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(tc.handler)
+			defer server.Close()
+
+			req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(t.TempDir(), "download.bin")
+			assertErrContains(t, Download(req, target), "")
+			if _, err := os.Stat(target); !os.IsNotExist(err) {
+				t.Fatalf("failed download left target behind: %v", err)
+			}
+		})
+	}
+}
+
 func TestUnTarGzProperties(t *testing.T) {
 	prop := func(name safeName, data payload) bool {
 		tmp := t.TempDir()
@@ -191,6 +235,20 @@ func TestUnTarGzFailures(t *testing.T) {
 	})
 	if root, err := UnTarGz(validArchive, filepath.Join(tmp, "valid-dest")); err != nil || !strings.HasSuffix(root, "latest") {
 		t.Fatalf("valid archive = %q, %v", root, err)
+	}
+
+	truncateDest := filepath.Join(tmp, "truncate-dest")
+	if err := os.MkdirAll(filepath.Join(truncateDest, "latest"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(truncateDest, "latest", "version"), []byte("long-version"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UnTarGz(validArchive, truncateDest); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustReadUtilsFile(t, filepath.Join(truncateDest, "latest", "version"))); got != "1.0.0" {
+		t.Fatalf("extracted file was not truncated: %q", got)
 	}
 
 	parentFile := filepath.Join(tmp, "not-dir")

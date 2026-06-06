@@ -22,8 +22,12 @@ func Download(req *http.Request, target string) error {
 		log.Errorf("cannot create file '%s', error: %s", target, err)
 		return err
 	}
+	removeTarget := true
 	defer func() {
 		_ = out.Close()
+		if removeTarget {
+			_ = os.Remove(target)
+		}
 	}()
 
 	resp, err := (&http.Client{}).Do(req)
@@ -52,5 +56,6 @@ func Download(req *http.Request, target string) error {
 		return err
 	}
 
+	removeTarget = false
 	return nil
 }

@@ -73,7 +73,7 @@ func UnTarGz(srcFile string, destDir string) (string, error) {
 			}
 
 		case tar.TypeReg:
-			file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
 			if err != nil {
 				return "", err
 			}
