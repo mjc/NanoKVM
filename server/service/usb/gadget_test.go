@@ -190,6 +190,66 @@ func TestMountedImageIgnoresStaleDataDiskImageState(t *testing.T) {
 	}
 }
 
+func TestMountedImageIgnoresStaleUnlinkedMediaImage(t *testing.T) {
+	withFakeGadget(t)
+	writeFile(t, MassStorageFlag, "/data/installer.iso")
+	writeFile(t, LUNFile, "/data/installer.iso")
+
+	image, err := MountedImage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image != "" {
+		t.Fatalf("mounted image with unlinked media = %q, want empty", image)
+	}
+}
+
+func TestMountedImageIgnoresStaleUnflaggedMediaImage(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, LUNFile, "/data/installer.iso")
+
+	image, err := MountedImage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image != "" {
+		t.Fatalf("mounted image without media flag = %q, want empty", image)
+	}
+}
+
+func TestCDROMFlagIgnoresStaleUnlinkedMediaFlag(t *testing.T) {
+	withFakeGadget(t)
+	writeFile(t, MassStorageFlag, "/data/installer.iso")
+	writeFile(t, LUNCDROM, "1")
+
+	flag, err := CDROMFlag()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flag != 0 {
+		t.Fatalf("CDROMFlag with unlinked media = %d, want 0", flag)
+	}
+}
+
+func TestCDROMFlagIgnoresStaleUnflaggedMediaFlag(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, LUNCDROM, "1")
+
+	flag, err := CDROMFlag()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flag != 0 {
+		t.Fatalf("CDROMFlag without media flag = %d, want 0", flag)
+	}
+}
+
 func TestSetVirtualMediaEnabledSetsFunctionDefaults(t *testing.T) {
 	withFakeGadget(t)
 
@@ -579,6 +639,10 @@ func TestSetDataDiskEnabledDisablesLegacyMediaBackedDataDisk(t *testing.T) {
 
 func TestCDROMFlagTreatsOnlyOneAsEnabled(t *testing.T) {
 	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, MassStorageFlag, "/data/installer.iso")
 
 	writeFile(t, LUNCDROM, "1\n")
 	flag, err := CDROMFlag()

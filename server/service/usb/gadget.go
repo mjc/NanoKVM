@@ -286,7 +286,7 @@ func DetachLUN() error {
 }
 
 func MountedImage() (string, error) {
-	if DataDiskEnabled() {
+	if DataDiskEnabled() || !VirtualMediaEnabled() {
 		return "", nil
 	}
 	image, err := ReadTrimmed(LUNFile)
@@ -297,7 +297,7 @@ func MountedImage() (string, error) {
 }
 
 func CDROMFlag() (int64, error) {
-	if DataDiskEnabled() {
+	if DataDiskEnabled() || !VirtualMediaEnabled() {
 		return 0, nil
 	}
 	flag, err := ReadTrimmed(LUNCDROM)
