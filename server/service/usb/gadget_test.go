@@ -36,16 +36,16 @@ func withFakeGadget(t *testing.T) {
 	old := []string{
 		GadgetPath, ConfigPath, ModeFlag, UDCPath, UDCClass, OTGRole,
 		MassStorageFunction, MassStorageLink, MassStorageFlag, MassStorageROFlag,
-		LUNPath, LUNFile, LUNCDROM, LUNInquiryString, LUNRO, LUNForcedEject,
+		MassStorageCDROMFlag, LUNPath, LUNFile, LUNCDROM, LUNInquiryString, LUNRO, LUNForcedEject,
 		DataDiskFunction, DataDiskLink, DataDiskFlag, DataDiskLUNPath,
 		DataDiskLUNFile, RNDISFunction, RNDISLink, RNDISFlag,
 	}
 	t.Cleanup(func() {
 		GadgetPath, ConfigPath, ModeFlag, UDCPath, UDCClass, OTGRole = old[0], old[1], old[2], old[3], old[4], old[5]
 		MassStorageFunction, MassStorageLink, MassStorageFlag, MassStorageROFlag = old[6], old[7], old[8], old[9]
-		LUNPath, LUNFile, LUNCDROM, LUNInquiryString, LUNRO, LUNForcedEject = old[10], old[11], old[12], old[13], old[14], old[15]
-		DataDiskFunction, DataDiskLink, DataDiskFlag, DataDiskLUNPath = old[16], old[17], old[18], old[19]
-		DataDiskLUNFile, RNDISFunction, RNDISLink, RNDISFlag = old[20], old[21], old[22], old[23]
+		MassStorageCDROMFlag, LUNPath, LUNFile, LUNCDROM, LUNInquiryString, LUNRO, LUNForcedEject = old[10], old[11], old[12], old[13], old[14], old[15], old[16]
+		DataDiskFunction, DataDiskLink, DataDiskFlag, DataDiskLUNPath = old[17], old[18], old[19], old[20]
+		DataDiskLUNFile, RNDISFunction, RNDISLink, RNDISFlag = old[21], old[22], old[23], old[24]
 	})
 
 	root := t.TempDir()
@@ -60,6 +60,7 @@ func withFakeGadget(t *testing.T) {
 	MassStorageLink = filepath.Join(ConfigPath, "mass_storage.disk0")
 	MassStorageFlag = filepath.Join(root, "boot", "usb.media0")
 	MassStorageROFlag = filepath.Join(root, "boot", "usb.media0.ro")
+	MassStorageCDROMFlag = filepath.Join(root, "boot", "usb.media0.cdrom")
 	LUNPath = filepath.Join(MassStorageFunction, "lun.0")
 	LUNFile = filepath.Join(LUNPath, "file")
 	LUNCDROM = filepath.Join(LUNPath, "cdrom")
@@ -67,11 +68,11 @@ func withFakeGadget(t *testing.T) {
 	LUNRO = filepath.Join(LUNPath, "ro")
 	LUNForcedEject = filepath.Join(LUNPath, "forced_eject")
 
-	DataDiskFunction = filepath.Join(GadgetPath, "functions", "mass_storage.disk1")
-	DataDiskLink = filepath.Join(ConfigPath, "mass_storage.disk1")
+	DataDiskFunction = MassStorageFunction
+	DataDiskLink = MassStorageLink
 	DataDiskFlag = filepath.Join(root, "boot", "usb.disk0")
-	DataDiskLUNPath = filepath.Join(DataDiskFunction, "lun.0")
-	DataDiskLUNFile = filepath.Join(DataDiskLUNPath, "file")
+	DataDiskLUNPath = LUNPath
+	DataDiskLUNFile = LUNFile
 
 	RNDISFunction = filepath.Join(GadgetPath, "functions", "rndis.usb0")
 	RNDISLink = filepath.Join(ConfigPath, "rndis.usb0")
@@ -114,7 +115,9 @@ func TestSetLUNImageMountsExplicitCDROM(t *testing.T) {
 
 	assertFile(t, UDCPath, "4340000.usb")
 	assertFile(t, OTGRole, "device")
-	assertFile(t, MassStorageFlag, "")
+	assertFile(t, MassStorageFlag, "/data/installer.iso")
+	assertFile(t, MassStorageROFlag, "")
+	assertFile(t, MassStorageCDROMFlag, "")
 	assertSymlink(t, MassStorageLink, MassStorageFunction)
 	assertFile(t, LUNFile, "/data/installer.iso")
 	assertFile(t, LUNRO, "1")
@@ -178,6 +181,10 @@ func TestSetVirtualMediaEnabledSetsFunctionDefaults(t *testing.T) {
 	}
 
 	assertFile(t, filepath.Join(LUNPath, "removable"), "1")
+	assertFile(t, MassStorageFlag, "")
+	if Exists(MassStorageROFlag) || Exists(MassStorageCDROMFlag) {
+		t.Fatal("empty virtual media left stale read-only or cdrom boot flags")
+	}
 	assertContains(t, LUNInquiryString, "USB Mass Storage")
 	assertSymlink(t, MassStorageLink, MassStorageFunction)
 }
@@ -224,22 +231,16 @@ func TestSetVirtualMediaEnabledIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestVirtualMediaAndDataDiskAreIndependent(t *testing.T) {
+func TestSetVirtualMediaEnabledDisablesPersistedCDROMState(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
 
-	if err := SetVirtualMediaEnabled(hid, true); err != nil {
+	if err := SetLUNImage(hid, "/data/installer.iso", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetDataDiskEnabled(hid, true); err != nil {
-		t.Fatal(err)
-	}
-
-	assertFile(t, MassStorageFlag, "")
-	assertSymlink(t, MassStorageLink, MassStorageFunction)
-	assertFile(t, DataDiskFlag, "")
-	assertSymlink(t, DataDiskLink, DataDiskFunction)
-	assertFile(t, DataDiskLUNFile, LegacyNoMediaImage)
+	assertFile(t, MassStorageFlag, "/data/installer.iso")
+	assertFile(t, MassStorageROFlag, "")
+	assertFile(t, MassStorageCDROMFlag, "")
 
 	if err := SetVirtualMediaEnabled(hid, false); err != nil {
 		t.Fatal(err)
@@ -247,12 +248,84 @@ func TestVirtualMediaAndDataDiskAreIndependent(t *testing.T) {
 	if Exists(MassStorageFlag) {
 		t.Fatal("media flag still exists after disabling virtual media")
 	}
+	if Exists(MassStorageROFlag) || Exists(MassStorageCDROMFlag) {
+		t.Fatal("read-only or cdrom boot flag still exists after disabling virtual media")
+	}
 	if Exists(MassStorageLink) {
 		t.Fatal("media link still exists after disabling virtual media")
 	}
+	assertFile(t, LUNFile, "\n")
+}
+
+func TestVirtualMediaAndDataDiskAreMutuallyExclusive(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+
+	if err := SetLUNImage(hid, "/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, MassStorageFlag, "/data/installer.iso")
+	assertFile(t, MassStorageCDROMFlag, "")
+	if DataDiskEnabled() {
+		t.Fatal("data disk reported enabled while media image is mounted")
+	}
+
+	if err := SetDataDiskEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if Exists(MassStorageFlag) || Exists(MassStorageROFlag) || Exists(MassStorageCDROMFlag) {
+		t.Fatal("data disk enable left virtual media boot state behind")
+	}
 	assertFile(t, DataDiskFlag, "")
-	assertSymlink(t, DataDiskLink, DataDiskFunction)
-	assertFile(t, DataDiskLUNFile, LegacyNoMediaImage)
+	assertSymlink(t, MassStorageLink, MassStorageFunction)
+	assertFile(t, LUNFile, LegacyNoMediaImage)
+	assertFile(t, LUNRO, "0")
+	assertFile(t, LUNCDROM, "0")
+	assertContains(t, LUNInquiryString, dataDiskInquiry)
+	if VirtualMediaEnabled() {
+		t.Fatal("virtual media reported enabled while data disk is active")
+	}
+
+	if err := SetLUNImage(hid, "/data/rescue.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	if Exists(DataDiskFlag) {
+		t.Fatal("media image mount left data disk boot flag behind")
+	}
+	assertFile(t, MassStorageFlag, "/data/rescue.iso")
+	assertFile(t, MassStorageCDROMFlag, "")
+	assertFile(t, LUNFile, "/data/rescue.iso")
+	assertContains(t, LUNInquiryString, cdromInquiry)
+	if DataDiskEnabled() {
+		t.Fatal("data disk reported enabled after media image mount")
+	}
+}
+
+func TestSetLUNImagePersistsBootMediaState(t *testing.T) {
+	withFakeGadget(t)
+
+	if err := SetLUNImage(&fakeHID{}, "/data/disk.img", false); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, MassStorageFlag, "/data/disk.img")
+	if Exists(MassStorageROFlag) || Exists(MassStorageCDROMFlag) {
+		t.Fatal("disk image mount left read-only or cdrom boot flags")
+	}
+
+	if err := SetLUNImage(&fakeHID{}, "/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, MassStorageFlag, "/data/installer.iso")
+	assertFile(t, MassStorageROFlag, "")
+	assertFile(t, MassStorageCDROMFlag, "")
+
+	if err := SetLUNImage(&fakeHID{}, "", false); err != nil {
+		t.Fatal(err)
+	}
+	assertFile(t, MassStorageFlag, "")
+	if Exists(MassStorageROFlag) || Exists(MassStorageCDROMFlag) {
+		t.Fatal("unmount left read-only or cdrom boot flags")
+	}
 }
 
 func TestSetDataDiskEnabledDisablesCleanly(t *testing.T) {
@@ -332,15 +405,33 @@ func TestEnabledStateComesFromConfigLinks(t *testing.T) {
 	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(DataDiskFunction, DataDiskLink); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.Symlink(RNDISFunction, RNDISLink); err != nil {
 		t.Fatal(err)
 	}
 
-	if !VirtualMediaEnabled() || !DataDiskEnabled() || !RNDISEnabled() {
-		t.Fatal("enabled state did not use configfs links")
+	if !VirtualMediaEnabled() || DataDiskEnabled() || !RNDISEnabled() {
+		t.Fatal("enabled state did not require configfs links")
+	}
+
+	if err := os.Remove(MassStorageFlag); err != nil {
+		t.Fatal(err)
+	}
+	if VirtualMediaEnabled() {
+		t.Fatal("virtual media stayed enabled without media flag")
+	}
+	if !DataDiskEnabled() {
+		t.Fatal("data disk did not stay enabled with data disk flag and shared link")
+	}
+
+	if err := os.Remove(DataDiskFlag); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, MassStorageFlag, "")
+	if !VirtualMediaEnabled() {
+		t.Fatal("virtual media did not report enabled with media flag and shared link")
+	}
+	if DataDiskEnabled() {
+		t.Fatal("data disk stayed enabled without data disk flag")
 	}
 }
 

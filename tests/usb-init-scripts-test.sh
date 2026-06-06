@@ -248,12 +248,6 @@ case "\$*" in
     check_nonempty "\${func}/lun.0/removable"
     check_nonempty "\${func}/lun.0/inquiry_string"
     ;;
-  "-s functions/mass_storage.disk1"*)
-    func="\$2"
-    check_nonempty "\${func}/lun.0/removable"
-    check_nonempty "\${func}/lun.0/inquiry_string"
-    check_nonempty "\${func}/lun.0/file"
-    ;;
 esac
 "${real_ln}" "\$@"
 EOF
@@ -447,6 +441,22 @@ test_normal_mounted_image_and_network(){
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "${USB_TEST_IMAGE}" "mounted image"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "1" "media ro flag"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "media cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Mass Storage" "mounted image inquiry"
+}
+
+test_normal_mounted_cdrom_image_and_network(){
+    base=$(new_env)
+    printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.media0.cdrom"
+    touch "${base}/boot/usb.rndis0"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_link "${g}/configs/c.1/${USB_RNDIS_FUNC}" "functions/${USB_RNDIS_FUNC}"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "${USB_TEST_IMAGE}" "mounted cdrom image"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "1" "cdrom ro flag"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "1" "cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB CD/DVD-ROM" "cdrom inquiry"
 }
 
 test_normal_ncm_network_descriptor(){
@@ -543,6 +553,7 @@ test_normal_data_disk_uses_mass_storage_slot
 test_normal_legacy_media_backing_is_no_media
 test_normal_mounted_image_and_network
 test_normal_ncm_network_descriptor
+test_normal_mounted_cdrom_image_and_network
 test_hid_only_descriptors_and_no_wake
 test_uses_one_udc
 test_stop_unbinds_and_sets_host_role
