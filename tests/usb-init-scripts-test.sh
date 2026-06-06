@@ -66,6 +66,16 @@ assert_not_contains(){
     fi
 }
 
+assert_contains(){
+    path="$1"
+    pattern="$2"
+    name="$3"
+    if ! grep -F "${pattern}" "${path}" >/dev/null
+    then
+        fail "${name}: missing '${pattern}' in ${path}"
+    fi
+}
+
 USB_DEFAULT_UDC="4340000.usb"
 USB_PHY_DEVICE="4340000.usb"
 USB_SECONDARY_UDC="4350000.usb"
@@ -82,7 +92,6 @@ USB_HID_KEYBOARD_FUNC="hid.GS0"
 USB_HID_RELATIVE_MOUSE_FUNC="hid.GS1"
 USB_HID_ABSOLUTE_MOUSE_FUNC="hid.GS2"
 USB_MASS_STORAGE_FUNC="mass_storage.disk0"
-USB_DATA_DISK_FUNC="mass_storage.disk1"
 USB_RNDIS_FUNC="rndis.usb0"
 USB_DATA_DISK_BACKING="/dev/mmcblk0p3"
 USB_TEST_IMAGE="/data/install.iso"
@@ -216,12 +225,6 @@ case "\$*" in
     check_nonempty "\${func}/lun.0/removable"
     check_nonempty "\${func}/lun.0/inquiry_string"
     ;;
-  "-s functions/mass_storage.disk1"*)
-    func="\$2"
-    check_nonempty "\${func}/lun.0/removable"
-    check_nonempty "\${func}/lun.0/inquiry_string"
-    check_nonempty "\${func}/lun.0/file"
-    ;;
 esac
 "${real_ln}" "\$@"
 EOF
@@ -348,26 +351,45 @@ test_normal_disable_hid_removes_hid_functions(){
     assert_no_hid_functions "${g}"
 }
 
-test_normal_media_and_data_disk_split(){
+test_normal_media_wins_over_data_disk(){
     base=$(new_env)
     : > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.media0.cdrom"
     touch "${base}/boot/usb.disk0"
     run_start "${NORMAL_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
 
     assert_link "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}" "functions/${USB_MASS_STORAGE_FUNC}"
-    assert_link "${g}/configs/c.1/${USB_DATA_DISK_FUNC}" "functions/${USB_DATA_DISK_FUNC}"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "" "empty media file"
-    assert_text_bytes "${g}/functions/${USB_DATA_DISK_FUNC}/lun.0/file" "${USB_DATA_DISK_BACKING}"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "0" "empty media ro flag"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "empty media cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Mass Storage" "empty media inquiry"
+}
+
+test_normal_data_disk_uses_mass_storage_slot(){
+    base=$(new_env)
+    touch "${base}/boot/usb.disk0"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_link "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}" "functions/${USB_MASS_STORAGE_FUNC}"
+    assert_text_bytes "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file" "${USB_DATA_DISK_BACKING}"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "0" "data disk ro flag"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "data disk cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Data Disk" "data disk inquiry"
 }
 
 test_normal_legacy_media_backing_is_no_media(){
     base=$(new_env)
     printf '%s' "${USB_DATA_DISK_BACKING}" > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.media0.cdrom"
     run_start "${NORMAL_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
 
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "" "legacy media backing"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "0" "legacy media ro flag"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "legacy media cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Mass Storage" "legacy media inquiry"
 }
 
 test_normal_mounted_image_and_network(){
@@ -382,6 +404,22 @@ test_normal_mounted_image_and_network(){
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "${USB_TEST_IMAGE}" "mounted image"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "1" "media ro flag"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "media cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Mass Storage" "mounted image inquiry"
+}
+
+test_normal_mounted_cdrom_image_and_network(){
+    base=$(new_env)
+    printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.media0.cdrom"
+    touch "${base}/boot/usb.rndis0"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_link "${g}/configs/c.1/${USB_RNDIS_FUNC}" "functions/${USB_RNDIS_FUNC}"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "${USB_TEST_IMAGE}" "mounted cdrom image"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "1" "cdrom ro flag"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "1" "cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB CD/DVD-ROM" "cdrom inquiry"
 }
 
 test_hid_only_descriptors_and_no_wake(){
@@ -459,9 +497,11 @@ test_usb_scripts_do_not_source_profile
 test_normal_hid_descriptors
 test_normal_bios_flag_keeps_only_boot_hid_interfaces
 test_normal_disable_hid_removes_hid_functions
-test_normal_media_and_data_disk_split
+test_normal_media_wins_over_data_disk
+test_normal_data_disk_uses_mass_storage_slot
 test_normal_legacy_media_backing_is_no_media
 test_normal_mounted_image_and_network
+test_normal_mounted_cdrom_image_and_network
 test_hid_only_descriptors_and_no_wake
 test_uses_one_udc
 test_stop_unbinds_and_sets_host_role

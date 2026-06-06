@@ -15,7 +15,6 @@ static const char *USB_HID0_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1
 static const char *USB_HID1_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/hid.GS1";
 static const char *USB_HID2_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/hid.GS2";
 static const char *USB_MEDIA_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0";
-static const char *USB_DATA_DISK_LINK = "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk1";
 
 static bool path_exists(const char *path)
 {
@@ -246,9 +245,7 @@ void kvm_update_usb_state()
 			path_exists(USB_HID0_LINK) ||
 			path_exists(USB_HID1_LINK) ||
 			path_exists(USB_HID2_LINK);
-		kvm_sys_state.udisk_state =
-			path_exists(USB_MEDIA_LINK) ||
-			path_exists(USB_DATA_DISK_LINK);
+		kvm_sys_state.udisk_state = path_exists(USB_MEDIA_LINK);
 	} else {
 		kvm_sys_state.hid_state = 0;
 		kvm_sys_state.udisk_state = 0;

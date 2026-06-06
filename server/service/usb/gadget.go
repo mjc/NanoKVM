@@ -19,19 +19,20 @@ var (
 	UDCClass   = "/sys/class/udc"
 	OTGRole    = "/proc/cviusb/otg_role"
 
-	MassStorageFunction = GadgetPath + "/functions/mass_storage.disk0"
-	MassStorageLink     = ConfigPath + "/mass_storage.disk0"
-	MassStorageFlag     = "/boot/usb.media0"
-	MassStorageROFlag   = "/boot/usb.media0.ro"
-	LUNPath             = MassStorageFunction + "/lun.0"
-	LUNFile             = LUNPath + "/file"
-	LUNCDROM            = LUNPath + "/cdrom"
-	LUNInquiryString    = LUNPath + "/inquiry_string"
-	LUNRO               = LUNPath + "/ro"
-	LUNForcedEject      = LUNPath + "/forced_eject"
+	MassStorageFunction  = GadgetPath + "/functions/mass_storage.disk0"
+	MassStorageLink      = ConfigPath + "/mass_storage.disk0"
+	MassStorageFlag      = "/boot/usb.media0"
+	MassStorageROFlag    = "/boot/usb.media0.ro"
+	MassStorageCDROMFlag = "/boot/usb.media0.cdrom"
+	LUNPath              = MassStorageFunction + "/lun.0"
+	LUNFile              = LUNPath + "/file"
+	LUNCDROM             = LUNPath + "/cdrom"
+	LUNInquiryString     = LUNPath + "/inquiry_string"
+	LUNRO                = LUNPath + "/ro"
+	LUNForcedEject       = LUNPath + "/forced_eject"
 
-	DataDiskFunction = GadgetPath + "/functions/mass_storage.disk1"
-	DataDiskLink     = ConfigPath + "/mass_storage.disk1"
+	DataDiskFunction = GadgetPath + "/functions/mass_storage.disk0"
+	DataDiskLink     = ConfigPath + "/mass_storage.disk0"
 	DataDiskFlag     = "/boot/usb.disk0"
 	DataDiskLUNPath  = DataDiskFunction + "/lun.0"
 	DataDiskLUNFile  = DataDiskLUNPath + "/file"
@@ -137,7 +138,10 @@ func FirstUDC() (string, error) {
 func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
-			if err := EnsureFile(MassStorageFlag); err != nil {
+			if err := persistMassStorageState("", false); err != nil {
+				return err
+			}
+			if err := RemoveIfExists(DataDiskFlag); err != nil {
 				return err
 			}
 			if err := ensureMassStorageLink(); err != nil {
@@ -152,6 +156,8 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 		errs := []error{
 			RemoveIfExists(MassStorageLink),
 			RemoveIfExists(MassStorageFlag),
+			RemoveIfExists(MassStorageROFlag),
+			RemoveIfExists(MassStorageCDROMFlag),
 		}
 		if Exists(LUNFile) {
 			errs = append([]error{DetachLUN()}, errs...)
@@ -164,6 +170,9 @@ func SetDataDiskEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
 			if err := EnsureFile(DataDiskFlag); err != nil {
+				return err
+			}
+			if err := removeMassStorageState(); err != nil {
 				return err
 			}
 			if err := ensureDataDiskLink(); err != nil {
@@ -206,11 +215,11 @@ func SetRNDISEnabled(h HIDController, enabled bool) error {
 }
 
 func VirtualMediaEnabled() bool {
-	return Exists(MassStorageLink)
+	return Exists(MassStorageLink) && Exists(MassStorageFlag)
 }
 
 func DataDiskEnabled() bool {
-	return Exists(DataDiskLink)
+	return Exists(DataDiskLink) && Exists(DataDiskFlag) && !Exists(MassStorageFlag)
 }
 
 func RNDISEnabled() bool {
@@ -231,7 +240,13 @@ func SetLUNImage(h HIDController, image string, cdrom bool) error {
 			return err
 		}
 
-		return setMassStorageLUN(image, cdrom)
+		if err := setMassStorageLUN(image, cdrom); err != nil {
+			return err
+		}
+		return errors.Join(
+			persistMassStorageState(image, cdrom),
+			RemoveIfExists(DataDiskFlag),
+		)
 	})
 }
 
@@ -341,6 +356,28 @@ func setMassStorageLUN(image string, cdrom bool) error {
 	return WriteString(LUNFile, image)
 }
 
+func persistMassStorageState(image string, cdrom bool) error {
+	if err := WriteString(MassStorageFlag, image); err != nil {
+		return err
+	}
+
+	errs := []error{}
+	if image != "" && cdrom {
+		errs = append(errs, EnsureFile(MassStorageROFlag), EnsureFile(MassStorageCDROMFlag))
+	} else {
+		errs = append(errs, RemoveIfExists(MassStorageROFlag), RemoveIfExists(MassStorageCDROMFlag))
+	}
+	return errors.Join(errs...)
+}
+
+func removeMassStorageState() error {
+	return errors.Join(
+		RemoveIfExists(MassStorageFlag),
+		RemoveIfExists(MassStorageROFlag),
+		RemoveIfExists(MassStorageCDROMFlag),
+	)
+}
+
 func ensureMassStorageFunction() error {
 	if !Exists(MassStorageFunction) {
 		if err := os.Mkdir(MassStorageFunction, 0o777); err != nil {
@@ -384,6 +421,12 @@ func ensureDataDiskFunction() error {
 	}
 	if err := WriteString(filepath.Join(DataDiskLUNPath, "removable"), "1"); err != nil {
 		return fmt.Errorf("set data disk removable flag: %w", err)
+	}
+	if err := WriteString(filepath.Join(DataDiskLUNPath, "ro"), "0"); err != nil {
+		return fmt.Errorf("set data disk read-only flag: %w", err)
+	}
+	if err := WriteString(filepath.Join(DataDiskLUNPath, "cdrom"), "0"); err != nil {
+		return fmt.Errorf("set data disk cdrom flag: %w", err)
 	}
 	if err := WriteString(filepath.Join(DataDiskLUNPath, "inquiry_string"), lunInquiry(dataDiskInquiry)); err != nil {
 		return fmt.Errorf("set data disk inquiry string: %w", err)

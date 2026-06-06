@@ -7,8 +7,8 @@
 USB_NCM_FUNC='ncm.usb0'
 USB_RNDIS_FUNC='rndis.usb0'
 USB_MASS_STORAGE_FUNC='mass_storage.disk0'
-USB_DATA_DISK_FUNC='mass_storage.disk1'
 USB_MASS_STORAGE_INQUIRY='NanoKVM USB Mass Storage0520'
+USB_CDROM_INQUIRY='NanoKVM USB CD/DVD-ROM  0520'
 USB_DATA_DISK_INQUIRY='NanoKVM USB Data Disk0520'
 USB_DATA_DISK_BACKING='/dev/mmcblk0p3'
 
@@ -34,27 +34,39 @@ start_usb_dev(){
     then
         mkdir "functions/${USB_MASS_STORAGE_FUNC}"
         echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable"
-        if [ -e "${USB_BOOT_DIR}/usb.media0.ro" ]
-        then
-            echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro"
-            echo 0 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom"
-        fi
-        printf '%s' "${USB_MASS_STORAGE_INQUIRY}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string"
         disk=$(cat "${USB_BOOT_DIR}/usb.media0")
+        media_ro=0
+        media_cdrom=0
+        media_inquiry="${USB_MASS_STORAGE_INQUIRY}"
+        if [ -n "${disk}" ] && [ "${disk}" != "${USB_DATA_DISK_BACKING}" ]
+        then
+            if [ -e "${USB_BOOT_DIR}/usb.media0.cdrom" ]
+            then
+                media_ro=1
+                media_cdrom=1
+                media_inquiry="${USB_CDROM_INQUIRY}"
+            elif [ -e "${USB_BOOT_DIR}/usb.media0.ro" ]
+            then
+                media_ro=1
+            fi
+        fi
+        echo "${media_ro}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro"
+        echo "${media_cdrom}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom"
+        printf '%s' "${media_inquiry}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string"
         if [ -n "${disk}" ] && [ "${disk}" != "${USB_DATA_DISK_BACKING}" ]
         then
             cat "${USB_BOOT_DIR}/usb.media0" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
         fi
         ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
-    fi
-
-    if [ -e "${USB_BOOT_DIR}/usb.disk0" ]
+    elif [ -e "${USB_BOOT_DIR}/usb.disk0" ]
     then
-        mkdir "functions/${USB_DATA_DISK_FUNC}"
-        echo 1 > "functions/${USB_DATA_DISK_FUNC}/lun.0/removable"
-        printf '%s' "${USB_DATA_DISK_INQUIRY}" > "functions/${USB_DATA_DISK_FUNC}/lun.0/inquiry_string"
-        printf '%s' "${USB_DATA_DISK_BACKING}" > "functions/${USB_DATA_DISK_FUNC}/lun.0/file"
-        ln -s "functions/${USB_DATA_DISK_FUNC}" configs/c.1/
+        mkdir "functions/${USB_MASS_STORAGE_FUNC}"
+        echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable"
+        echo 0 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro"
+        echo 0 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom"
+        printf '%s' "${USB_DATA_DISK_INQUIRY}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string"
+        printf '%s' "${USB_DATA_DISK_BACKING}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
+        ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
     fi
 
     bind_first_udc
