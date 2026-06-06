@@ -539,6 +539,8 @@ func TestSetDataDiskEnabledDisablesLegacyMediaBackedDataDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, MassStorageFlag, LegacyNoMediaImage)
+	writeFile(t, MassStorageROFlag, "")
+	writeFile(t, MassStorageCDROMFlag, "")
 	writeFile(t, DataDiskFlag, "")
 	writeFile(t, LUNFile, LegacyNoMediaImage)
 
@@ -551,6 +553,9 @@ func TestSetDataDiskEnabledDisablesLegacyMediaBackedDataDisk(t *testing.T) {
 	}
 	if Exists(MassStorageLink) {
 		t.Fatal("shared mass-storage link still exists after disabling legacy-backed data disk")
+	}
+	if Exists(MassStorageFlag) || Exists(MassStorageROFlag) || Exists(MassStorageCDROMFlag) {
+		t.Fatal("legacy media boot state still exists after disabling legacy-backed data disk")
 	}
 	assertFile(t, LUNFile, "\n")
 }

@@ -197,6 +197,9 @@ func SetDataDiskEnabled(h HIDController, enabled bool) error {
 			RemoveIfExists(DataDiskLink),
 			RemoveIfExists(DataDiskFlag),
 		}
+		if image, ok := massStorageFlagImage(); ok && image == LegacyNoMediaImage {
+			errs = append(errs, removeMassStorageState())
+		}
 		if Exists(DataDiskLUNFile) {
 			errs = append([]error{ClearString(DataDiskLUNFile)}, errs...)
 		}
