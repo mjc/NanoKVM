@@ -301,6 +301,27 @@ func TestVirtualMediaAndDataDiskAreMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestDataDiskUsesSharedMassStorageSlot(t *testing.T) {
+	withFakeGadget(t)
+
+	if err := SetDataDiskEnabled(&fakeHID{}, true); err != nil {
+		t.Fatal(err)
+	}
+
+	assertSymlink(t, MassStorageLink, MassStorageFunction)
+	assertFile(t, DataDiskFlag, "")
+	assertFile(t, LUNFile, LegacyNoMediaImage)
+	assertFile(t, LUNRO, "0")
+	assertFile(t, LUNCDROM, "0")
+	assertContains(t, LUNInquiryString, dataDiskInquiry)
+	if VirtualMediaEnabled() {
+		t.Fatal("virtual media reported enabled for data disk")
+	}
+	if !DataDiskEnabled() {
+		t.Fatal("data disk did not report enabled from shared mass-storage slot")
+	}
+}
+
 func TestSetLUNImagePersistsBootMediaState(t *testing.T) {
 	withFakeGadget(t)
 
