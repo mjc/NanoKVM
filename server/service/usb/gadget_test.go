@@ -476,6 +476,31 @@ func TestSetVirtualMediaEnabledEvictsDataDisk(t *testing.T) {
 	assertContains(t, LUNInquiryString, massStorageInquiry)
 }
 
+func TestSetVirtualMediaEnabledFailurePreservesDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetDataDiskEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(LUNRO); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNRO, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetVirtualMediaEnabled(hid, true); err == nil {
+		t.Fatal("SetVirtualMediaEnabled succeeded despite unwritable ro flag")
+	}
+
+	if !Exists(DataDiskFlag) {
+		t.Fatal("failed media enable removed data disk flag")
+	}
+	if Exists(MassStorageFlag) {
+		t.Fatal("failed media enable left media flag behind")
+	}
+}
+
 func TestSetDataDiskEnabledEvictsEmptyVirtualMedia(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
@@ -505,6 +530,31 @@ func TestSetDataDiskEnabledEvictsEmptyVirtualMedia(t *testing.T) {
 	assertFile(t, LUNRO, "0")
 	assertFile(t, LUNCDROM, "0")
 	assertContains(t, LUNInquiryString, dataDiskInquiry)
+}
+
+func TestSetDataDiskEnabledFailurePreservesMedia(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetLUNImage(hid, "/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(LUNRO); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNRO, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetDataDiskEnabled(hid, true); err == nil {
+		t.Fatal("SetDataDiskEnabled succeeded despite unwritable ro flag")
+	}
+
+	if !Exists(MassStorageFlag) {
+		t.Fatal("failed data disk enable removed media flag")
+	}
+	if Exists(DataDiskFlag) {
+		t.Fatal("failed data disk enable left data disk flag behind")
+	}
 }
 
 func TestDisablingInactiveSelectorPreservesActiveMassStorage(t *testing.T) {

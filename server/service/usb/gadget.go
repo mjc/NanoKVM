@@ -138,19 +138,19 @@ func FirstUDC() (string, error) {
 func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
-			if err := persistMassStorageState("", false); err != nil {
-				return err
-			}
-			if err := RemoveIfExists(DataDiskFlag); err != nil {
-				return err
-			}
 			if err := ensureMassStorageLink(); err != nil {
+				return err
+			}
+			if err := setMassStorageLUNMode("", false); err != nil {
 				return err
 			}
 			if err := DetachLUN(); err != nil {
 				return err
 			}
-			return setMassStorageLUN("", false)
+			return errors.Join(
+				persistMassStorageState("", false),
+				RemoveIfExists(DataDiskFlag),
+			)
 		}
 
 		if DataDiskEnabled() {
@@ -175,16 +175,16 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 func SetDataDiskEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
-			if err := EnsureFile(DataDiskFlag); err != nil {
-				return err
-			}
-			if err := removeMassStorageState(); err != nil {
-				return err
-			}
 			if err := ensureDataDiskLink(); err != nil {
 				return err
 			}
-			return WriteString(DataDiskLUNFile, LegacyNoMediaImage)
+			if err := WriteString(DataDiskLUNFile, LegacyNoMediaImage); err != nil {
+				return err
+			}
+			return errors.Join(
+				EnsureFile(DataDiskFlag),
+				removeMassStorageState(),
+			)
 		}
 
 		if !Exists(DataDiskFlag) {
