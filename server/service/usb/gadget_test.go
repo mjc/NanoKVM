@@ -415,6 +415,29 @@ func TestDisablingInactiveSelectorPreservesActiveMassStorage(t *testing.T) {
 	assertFile(t, LUNFile, "/data/installer.iso")
 }
 
+func TestUnmountInactiveMediaPreservesActiveDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+
+	if err := SetDataDiskEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetLUNImage(hid, "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	if !DataDiskEnabled() {
+		t.Fatal("unmounting inactive media disabled active data disk")
+	}
+	if VirtualMediaEnabled() {
+		t.Fatal("unmounting inactive media enabled virtual media")
+	}
+	assertFile(t, DataDiskFlag, "")
+	assertSymlink(t, MassStorageLink, MassStorageFunction)
+	assertFile(t, LUNFile, LegacyNoMediaImage)
+	assertContains(t, LUNInquiryString, dataDiskInquiry)
+}
+
 func TestSetLUNImagePersistsBootMediaState(t *testing.T) {
 	withFakeGadget(t)
 
