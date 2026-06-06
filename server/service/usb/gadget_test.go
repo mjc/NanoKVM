@@ -407,19 +407,20 @@ func TestPrepareMassStorageLUNLinksAfterModeAndBacking(t *testing.T) {
 	assertContains(t, LUNInquiryString, cdromInquiry)
 }
 
-func TestLinkMassStorageFunctionDoesNotResetPreparedLUN(t *testing.T) {
+func TestLinkSharedMassStorageFunctionDoesNotResetPreparedLUN(t *testing.T) {
 	withFakeGadget(t)
 
-	if err := ensureMassStorageFunction(); err != nil {
+	if err := ensureSharedMassStorageFunction(); err != nil {
 		t.Fatal(err)
 	}
-	if err := setMassStorageLUNMode("/data/installer.iso", true); err != nil {
+	profile := mediaLUNProfile("/data/installer.iso", true)
+	if err := writeMassStorageLUNMode(profile); err != nil {
 		t.Fatal(err)
 	}
-	if err := attachMassStorageImage("/data/installer.iso"); err != nil {
+	if err := attachMassStorageBacking(profile); err != nil {
 		t.Fatal(err)
 	}
-	if err := linkMassStorageFunction(); err != nil {
+	if err := linkSharedMassStorageFunction(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -446,27 +447,70 @@ func TestPrepareDataDiskLUNLinksAfterModeAndBacking(t *testing.T) {
 	assertContains(t, LUNInquiryString, dataDiskInquiry)
 }
 
-func TestLinkDataDiskFunctionDoesNotResetPreparedLUN(t *testing.T) {
-	withFakeGadget(t)
+func TestMassStorageLUNProfiles(t *testing.T) {
+	tests := []struct {
+		name      string
+		profile   massStorageLUNProfile
+		wantFile  string
+		wantRO    string
+		wantCDROM string
+		wantQuery string
+	}{
+		{
+			name:      "empty media",
+			profile:   mediaLUNProfile("", false),
+			wantRO:    "0",
+			wantCDROM: "0",
+			wantQuery: massStorageInquiry,
+		},
+		{
+			name:      "writable media image",
+			profile:   mediaLUNProfile("/data/disk.img", false),
+			wantFile:  "/data/disk.img",
+			wantRO:    "0",
+			wantCDROM: "0",
+			wantQuery: massStorageInquiry,
+		},
+		{
+			name:      "cdrom media image",
+			profile:   mediaLUNProfile("/data/installer.iso", true),
+			wantFile:  "/data/installer.iso",
+			wantRO:    "1",
+			wantCDROM: "1",
+			wantQuery: cdromInquiry,
+		},
+		{
+			name:      "data disk",
+			profile:   dataDiskLUNProfile(),
+			wantFile:  LegacyNoMediaImage,
+			wantRO:    "0",
+			wantCDROM: "0",
+			wantQuery: dataDiskInquiry,
+		},
+	}
 
-	if err := ensureDataDiskFunction(); err != nil {
-		t.Fatal(err)
-	}
-	if err := setMassStorageLUNMode("/data/installer.iso", true); err != nil {
-		t.Fatal(err)
-	}
-	if err := attachMassStorageImage("/data/installer.iso"); err != nil {
-		t.Fatal(err)
-	}
-	if err := linkDataDiskFunction(); err != nil {
-		t.Fatal(err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withFakeGadget(t)
+			writeFile(t, LUNFile, "stale")
 
-	assertSymlink(t, DataDiskLink, DataDiskFunction)
-	assertFile(t, DataDiskLUNFile, "/data/installer.iso")
-	assertFile(t, LUNRO, "1")
-	assertFile(t, LUNCDROM, "1")
-	assertContains(t, LUNInquiryString, cdromInquiry)
+			if err := writeMassStorageLUNMode(tt.profile); err != nil {
+				t.Fatal(err)
+			}
+			if err := attachMassStorageBacking(tt.profile); err != nil {
+				t.Fatal(err)
+			}
+
+			wantFile := tt.wantFile
+			if wantFile == "" {
+				wantFile = "stale"
+			}
+			assertFile(t, LUNFile, wantFile)
+			assertFile(t, LUNRO, tt.wantRO)
+			assertFile(t, LUNCDROM, tt.wantCDROM)
+			assertContains(t, LUNInquiryString, tt.wantQuery)
+		})
+	}
 }
 
 func TestSetVirtualMediaEnabledIsIdempotent(t *testing.T) {

@@ -73,6 +73,13 @@ const (
 	massStorageOwnerDataDisk
 )
 
+type massStorageLUNProfile struct {
+	backing        string
+	readOnly       bool
+	cdrom          bool
+	inquiryProduct string
+}
+
 func WithDetachedUDC(h HIDController, mutate func() error) error {
 	h.Lock()
 	h.CloseNoLock()
@@ -379,54 +386,77 @@ func lunInquiry(product string) string {
 	return fmt.Sprintf("%-8s%-16s%04x", "NanoKVM", product, 0x0520)
 }
 
-func setMassStorageLUN(image string, cdrom bool) error {
-	if err := setMassStorageLUNMode(image, cdrom); err != nil {
-		return err
-	}
-	return attachMassStorageImage(image)
-}
-
 func prepareMassStorageLUN(image string, cdrom bool) error {
-	if err := ensureMassStorageFunction(); err != nil {
-		return err
-	}
-	if err := setMassStorageLUNMode(image, cdrom); err != nil {
-		return err
-	}
-	if err := DetachLUN(); err != nil {
-		return err
-	}
-	if err := attachMassStorageImage(image); err != nil {
-		return err
-	}
-	return linkMassStorageFunction()
+	return prepareSharedMassStorageLUN(mediaLUNProfile(image, cdrom), true)
 }
 
-func setMassStorageLUNMode(image string, cdrom bool) error {
-	flag := "0"
-	inquiryProduct := massStorageInquiry
-	if image != "" && cdrom {
-		flag = "1"
-		inquiryProduct = cdromInquiry
-	}
+func prepareDataDiskLUN() error {
+	return prepareSharedMassStorageLUN(dataDiskLUNProfile(), false)
+}
 
-	if err := WriteString(LUNRO, flag); err != nil {
+func prepareSharedMassStorageLUN(profile massStorageLUNProfile, detach bool) error {
+	if err := ensureSharedMassStorageFunction(); err != nil {
+		return err
+	}
+	if err := writeMassStorageLUNMode(profile); err != nil {
+		return err
+	}
+	if detach {
+		if err := DetachLUN(); err != nil {
+			return err
+		}
+	}
+	if err := attachMassStorageBacking(profile); err != nil {
+		return err
+	}
+	return linkSharedMassStorageFunction()
+}
+
+func mediaLUNProfile(image string, cdrom bool) massStorageLUNProfile {
+	profile := massStorageLUNProfile{
+		backing:        image,
+		inquiryProduct: massStorageInquiry,
+	}
+	if image != "" && cdrom {
+		profile.readOnly = true
+		profile.cdrom = true
+		profile.inquiryProduct = cdromInquiry
+	}
+	return profile
+}
+
+func dataDiskLUNProfile() massStorageLUNProfile {
+	return massStorageLUNProfile{
+		backing:        LegacyNoMediaImage,
+		inquiryProduct: dataDiskInquiry,
+	}
+}
+
+func writeMassStorageLUNMode(profile massStorageLUNProfile) error {
+	if err := WriteString(LUNRO, boolFlag(profile.readOnly)); err != nil {
 		return fmt.Errorf("set read-only flag: %w", err)
 	}
-	if err := WriteString(LUNCDROM, flag); err != nil {
+	if err := WriteString(LUNCDROM, boolFlag(profile.cdrom)); err != nil {
 		return fmt.Errorf("set cdrom flag: %w", err)
 	}
-	if err := WriteString(LUNInquiryString, lunInquiry(inquiryProduct)); err != nil {
+	if err := WriteString(LUNInquiryString, lunInquiry(profile.inquiryProduct)); err != nil {
 		return fmt.Errorf("set inquiry string: %w", err)
 	}
 	return nil
 }
 
-func attachMassStorageImage(image string) error {
-	if image == "" {
+func attachMassStorageBacking(profile massStorageLUNProfile) error {
+	if profile.backing == "" {
 		return nil
 	}
-	return WriteString(LUNFile, image)
+	return WriteString(LUNFile, profile.backing)
+}
+
+func boolFlag(enabled bool) string {
+	if enabled {
+		return "1"
+	}
+	return "0"
 }
 
 func persistMassStorageState(image string, cdrom bool) error {
@@ -451,7 +481,7 @@ func removeMassStorageState() error {
 	)
 }
 
-func ensureMassStorageFunction() error {
+func ensureSharedMassStorageFunction() error {
 	if !Exists(MassStorageFunction) {
 		if err := os.Mkdir(MassStorageFunction, 0o777); err != nil {
 			return fmt.Errorf("create mass storage function: %w", err)
@@ -460,13 +490,10 @@ func ensureMassStorageFunction() error {
 	if err := WriteString(filepath.Join(LUNPath, "removable"), "1"); err != nil {
 		return fmt.Errorf("set removable flag: %w", err)
 	}
-	if err := WriteString(LUNInquiryString, lunInquiry(massStorageInquiry)); err != nil {
-		return fmt.Errorf("set inquiry string: %w", err)
-	}
 	return nil
 }
 
-func linkMassStorageFunction() error {
+func linkSharedMassStorageFunction() error {
 	if !Exists(MassStorageLink) {
 		return os.Symlink(MassStorageFunction, MassStorageLink)
 	}
@@ -479,44 +506,6 @@ func ensureRNDISFunction() error {
 	}
 	if err := os.Mkdir(RNDISFunction, 0o777); err != nil {
 		return fmt.Errorf("create RNDIS function: %w", err)
-	}
-	return nil
-}
-
-func ensureDataDiskFunction() error {
-	if !Exists(DataDiskFunction) {
-		if err := os.Mkdir(DataDiskFunction, 0o777); err != nil {
-			return fmt.Errorf("create data disk function: %w", err)
-		}
-	}
-	if err := WriteString(filepath.Join(DataDiskLUNPath, "removable"), "1"); err != nil {
-		return fmt.Errorf("set data disk removable flag: %w", err)
-	}
-	if err := WriteString(filepath.Join(DataDiskLUNPath, "ro"), "0"); err != nil {
-		return fmt.Errorf("set data disk read-only flag: %w", err)
-	}
-	if err := WriteString(filepath.Join(DataDiskLUNPath, "cdrom"), "0"); err != nil {
-		return fmt.Errorf("set data disk cdrom flag: %w", err)
-	}
-	if err := WriteString(filepath.Join(DataDiskLUNPath, "inquiry_string"), lunInquiry(dataDiskInquiry)); err != nil {
-		return fmt.Errorf("set data disk inquiry string: %w", err)
-	}
-	return nil
-}
-
-func prepareDataDiskLUN() error {
-	if err := ensureDataDiskFunction(); err != nil {
-		return err
-	}
-	if err := WriteString(DataDiskLUNFile, LegacyNoMediaImage); err != nil {
-		return err
-	}
-	return linkDataDiskFunction()
-}
-
-func linkDataDiskFunction() error {
-	if !Exists(DataDiskLink) {
-		return os.Symlink(DataDiskFunction, DataDiskLink)
 	}
 	return nil
 }
