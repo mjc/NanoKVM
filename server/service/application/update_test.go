@@ -448,6 +448,9 @@ func TestInstallPackageErrors(t *testing.T) {
 	if err := applyUpdate("source"); err == nil || !strings.Contains(err.Error(), "failed to move update") {
 		t.Fatalf("expected apply failure, got %v", err)
 	}
+	if calls != 2 {
+		t.Fatalf("expected apply failure to restore backup, got %d move calls", calls)
+	}
 
 	untarGz = func(string, string) (string, error) {
 		return "source", nil
