@@ -1,8 +1,7 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/base64"
+	"NanoKVM-Server/utils"
 	"fmt"
 	"time"
 )
@@ -20,13 +19,12 @@ func ForceRegenerateSecretKey() {
 
 // Generate random string for secret key.
 func generateRandomSecretKey() string {
-	b := make([]byte, 64)
-	_, err := rand.Read(b)
+	secret, err := utils.RandomBase64URLString(64)
 	if err != nil {
 		currentTime := time.Now().UnixNano()
 		timeString := fmt.Sprintf("%d", currentTime)
 		return fmt.Sprintf("%064s", timeString)
 	}
 
-	return base64.URLEncoding.EncodeToString(b)
+	return secret
 }

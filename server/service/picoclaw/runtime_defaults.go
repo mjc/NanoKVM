@@ -1,8 +1,7 @@
 package picoclaw
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"NanoKVM-Server/utils"
 	"fmt"
 	"reflect"
 	"strings"
@@ -196,11 +195,11 @@ func (e *picoclawConfigEditor) setMCPServer(name string, fields map[string]any) 
 }
 
 func generatePicoclawToken() (string, error) {
-	buf := make([]byte, 24)
-	if _, err := rand.Read(buf); err != nil {
+	token, err := utils.RandomHexString(24)
+	if err != nil {
 		return "", fmt.Errorf("failed to generate picoclaw pico token: %w", err)
 	}
-	return hex.EncodeToString(buf), nil
+	return token, nil
 }
 
 func ensurePicoclawPicoToken(doc *picoclawConfigDocument) (bool, error) {

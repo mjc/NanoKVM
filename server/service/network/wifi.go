@@ -2,7 +2,6 @@ package network
 
 import (
 	"NanoKVM-Server/utils"
-	"crypto/subtle"
 	"fmt"
 	"os"
 	"os/exec"
@@ -68,7 +67,7 @@ func (s *Service) ConnectWifiNoAuth(c *gin.Context) {
 	// Verify AP Password
 	apKey := c.GetHeader("X-AP-Key")
 	expectedPass := getApPassword()
-	if apKey == "" || expectedPass == "" || subtle.ConstantTimeCompare([]byte(apKey), []byte(expectedPass)) != 1 {
+	if apKey == "" || expectedPass == "" || !utils.ConstantTimeEqualString(apKey, expectedPass) {
 		time.Sleep(2 * time.Second)
 		rsp.ErrRsp(c, -4, "unauthorized")
 		return
@@ -102,7 +101,7 @@ func (s *Service) VerifyApLogin(c *gin.Context) {
 
 	apKey := c.GetHeader("X-AP-Key")
 	expectedPass := getApPassword()
-	if apKey == "" || expectedPass == "" || subtle.ConstantTimeCompare([]byte(apKey), []byte(expectedPass)) != 1 {
+	if apKey == "" || expectedPass == "" || !utils.ConstantTimeEqualString(apKey, expectedPass) {
 		time.Sleep(2 * time.Second)
 		rsp.ErrRsp(c, -4, "unauthorized")
 		return

@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"crypto/subtle"
+	"NanoKVM-Server/utils"
 	"net"
 	"net/http"
 	"strings"
@@ -80,7 +80,7 @@ func hasValidLoopbackHTTPToken(req *http.Request) bool {
 	}
 
 	provided := req.Header.Get(config.PicoclawInternalTokenHeader)
-	return subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
+	return utils.ConstantTimeEqualString(provided, token)
 }
 
 func isLoopbackRemote(remoteAddr string) bool {
