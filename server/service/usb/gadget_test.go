@@ -582,6 +582,24 @@ func TestCDROMFlagTreatsOnlyOneAsEnabled(t *testing.T) {
 	}
 }
 
+func TestCDROMFlagIgnoresStaleDataDiskCDROMState(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, MassStorageFlag, LegacyNoMediaImage)
+	writeFile(t, DataDiskFlag, "")
+	writeFile(t, LUNCDROM, "1\n")
+
+	flag, err := CDROMFlag()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flag != 0 {
+		t.Fatalf("CDROMFlag = %d for data disk, want 0", flag)
+	}
+}
+
 func TestSetRNDISEnabledTogglesFlagAndLink(t *testing.T) {
 	withFakeGadget(t)
 
