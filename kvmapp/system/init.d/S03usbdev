@@ -33,7 +33,7 @@ start_usb_dev(){
     media_disk=''
     if [ -e "${USB_BOOT_DIR}/usb.media0" ]
     then
-        media_disk=$(cat "${USB_BOOT_DIR}/usb.media0")
+        media_disk=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "${USB_BOOT_DIR}/usb.media0")
     fi
 
     if [ -e "${USB_BOOT_DIR}/usb.media0" ] && { [ "${media_disk}" != "${USB_DATA_DISK_BACKING}" ] || [ ! -e "${USB_BOOT_DIR}/usb.disk0" ]; }
@@ -61,7 +61,7 @@ start_usb_dev(){
         printf '%s' "${media_inquiry}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string"
         if [ -n "${disk}" ] && [ "${disk}" != "${USB_DATA_DISK_BACKING}" ]
         then
-            cat "${USB_BOOT_DIR}/usb.media0" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
+            printf '%s' "${disk}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
         fi
         ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
     elif [ -e "${USB_BOOT_DIR}/usb.disk0" ]

@@ -408,6 +408,20 @@ test_normal_data_disk_wins_over_legacy_media_backing(){
     assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Data Disk" "legacy media data disk inquiry"
 }
 
+test_normal_data_disk_wins_over_spaced_legacy_media_backing(){
+    base=$(new_env)
+    printf '  %s  \n' "${USB_DATA_DISK_BACKING}" > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.disk0"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_link "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}" "functions/${USB_MASS_STORAGE_FUNC}"
+    assert_text_bytes "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file" "${USB_DATA_DISK_BACKING}"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "0" "spaced legacy media data disk ro flag"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "spaced legacy media data disk cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Data Disk" "spaced legacy media data disk inquiry"
+}
+
 test_normal_mounted_image_and_network(){
     base=$(new_env)
     printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
@@ -520,6 +534,7 @@ test_normal_media_wins_over_data_disk
 test_normal_data_disk_uses_mass_storage_slot
 test_normal_legacy_media_backing_is_no_media
 test_normal_data_disk_wins_over_legacy_media_backing
+test_normal_data_disk_wins_over_spaced_legacy_media_backing
 test_normal_mounted_image_and_network
 test_normal_mounted_cdrom_image_and_network
 test_hid_only_descriptors_and_no_wake
