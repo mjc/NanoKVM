@@ -65,6 +65,14 @@ type HIDController interface {
 	OpenNoLockWithRetry(time.Duration, time.Duration) error
 }
 
+type massStorageOwner int
+
+const (
+	massStorageOwnerNone massStorageOwner = iota
+	massStorageOwnerMedia
+	massStorageOwnerDataDisk
+)
+
 func WithDetachedUDC(h HIDController, mutate func() error) error {
 	h.Lock()
 	h.CloseNoLock()
@@ -152,7 +160,7 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 			)
 		}
 
-		if DataDiskEnabled() {
+		if currentMassStorageOwner() == massStorageOwnerDataDisk {
 			return nil
 		}
 		if !Exists(MassStorageFlag) {
@@ -193,7 +201,7 @@ func SetDataDiskEnabled(h HIDController, enabled bool) error {
 		if !Exists(DataDiskFlag) {
 			return nil
 		}
-		if VirtualMediaEnabled() {
+		if currentMassStorageOwner() == massStorageOwnerMedia {
 			return RemoveIfExists(DataDiskFlag)
 		}
 		if Exists(DataDiskLUNFile) {
@@ -235,13 +243,26 @@ func SetRNDISEnabled(h HIDController, enabled bool) error {
 }
 
 func VirtualMediaEnabled() bool {
-	image, ok := massStorageFlagImage()
-	return Exists(MassStorageLink) && ok && image != LegacyNoMediaImage
+	return currentMassStorageOwner() == massStorageOwnerMedia
 }
 
 func DataDiskEnabled() bool {
+	return currentMassStorageOwner() == massStorageOwnerDataDisk
+}
+
+func currentMassStorageOwner() massStorageOwner {
+	if !Exists(MassStorageLink) {
+		return massStorageOwnerNone
+	}
+
 	image, massStorageFlagExists := massStorageFlagImage()
-	return Exists(DataDiskLink) && Exists(DataDiskFlag) && (!massStorageFlagExists || image == LegacyNoMediaImage)
+	if massStorageFlagExists && image != LegacyNoMediaImage {
+		return massStorageOwnerMedia
+	}
+	if Exists(DataDiskFlag) && (!massStorageFlagExists || image == LegacyNoMediaImage) {
+		return massStorageOwnerDataDisk
+	}
+	return massStorageOwnerNone
 }
 
 func massStorageFlagImage() (string, bool) {
@@ -256,7 +277,7 @@ func RNDISEnabled() bool {
 func SetLUNImage(h HIDController, image string, cdrom bool) error {
 	image = NormalizeImage(image)
 	return WithDetachedUDC(h, func() error {
-		if image == "" && DataDiskEnabled() {
+		if image == "" && currentMassStorageOwner() == massStorageOwnerDataDisk {
 			return nil
 		}
 		if err := prepareMassStorageLUN(image, cdrom); err != nil {
@@ -280,7 +301,10 @@ func DetachLUN() error {
 }
 
 func MountedImage() (string, error) {
-	if DataDiskEnabled() || !VirtualMediaEnabled() {
+	if currentMassStorageOwner() != massStorageOwnerMedia {
+		return "", nil
+	}
+	if image, ok := massStorageFlagImage(); !ok || image == "" {
 		return "", nil
 	}
 	image, err := ReadTrimmed(LUNFile)
@@ -291,7 +315,10 @@ func MountedImage() (string, error) {
 }
 
 func CDROMFlag() (int64, error) {
-	if DataDiskEnabled() || !VirtualMediaEnabled() {
+	if currentMassStorageOwner() != massStorageOwnerMedia {
+		return 0, nil
+	}
+	if image, ok := massStorageFlagImage(); !ok || image == "" {
 		return 0, nil
 	}
 	flag, err := ReadTrimmed(LUNCDROM)
@@ -443,13 +470,6 @@ func ensureMassStorageFunction() error {
 		return fmt.Errorf("set inquiry string: %w", err)
 	}
 	return nil
-}
-
-func ensureMassStorageLink() error {
-	if err := ensureMassStorageFunction(); err != nil {
-		return err
-	}
-	return linkMassStorageFunction()
 }
 
 func linkMassStorageFunction() error {
