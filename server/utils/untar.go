@@ -3,6 +3,7 @@ package utils
 import (
 	"archive/tar"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -46,6 +47,16 @@ func UnTarGz(srcFile string, destDir string) (string, error) {
 			return "", err
 		}
 
+		if !isSafeTarPath(header.Name) {
+			return "", fmt.Errorf("invalid tar path: %s", header.Name)
+		}
+		if !isLatestRootedTarPath(header.Name) {
+			return "", fmt.Errorf("invalid tar root: %s", header.Name)
+		}
+		if header.Typeflag == tar.TypeSymlink && !isSafeTarPath(header.Linkname) {
+			return "", fmt.Errorf("invalid symlink target: %s", header.Linkname)
+		}
+
 		if targetFile == "" {
 			parts := strings.Split(header.Name, "/")
 			if len(parts) > 0 {
@@ -81,4 +92,26 @@ func UnTarGz(srcFile string, destDir string) (string, error) {
 	}
 
 	return targetFile, nil
+}
+
+func isSafeTarPath(name string) bool {
+	if name == "" || filepath.IsAbs(name) {
+		return false
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == ".." {
+			return false
+		}
+	}
+
+	clean := filepath.Clean(name)
+	if clean == "." {
+		return false
+	}
+	return true
+}
+
+func isLatestRootedTarPath(name string) bool {
+	clean := filepath.ToSlash(filepath.Clean(name))
+	return clean == "latest" || strings.HasPrefix(clean, "latest/")
 }

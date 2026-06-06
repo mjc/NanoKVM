@@ -45,6 +45,12 @@ func MoveFileCrossFS(src, dst string) error {
 		_ = srcFile.Close()
 		return err
 	}
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			_ = moveRemove(tmp)
+		}
+	}()
 	_, err = moveCopy(tmpFile, srcFile)
 	if err != nil {
 		_ = srcFile.Close()
@@ -65,6 +71,7 @@ func MoveFileCrossFS(src, dst string) error {
 	if err != nil {
 		return err
 	}
+	removeTmp = false
 	_ = moveRemove(src)
 	return nil
 }

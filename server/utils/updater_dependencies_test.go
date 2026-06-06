@@ -250,6 +250,54 @@ func TestUnTarGzFailures(t *testing.T) {
 			},
 			want: "file exists",
 		},
+		{
+			name: "parent-traversal-file",
+			entries: []tarEntry{
+				{name: "latest/", mode: 0o755, typeflag: tar.TypeDir},
+				{name: "latest/../escape", body: []byte("x"), mode: 0o644, typeflag: tar.TypeReg},
+			},
+			want: "invalid tar path",
+		},
+		{
+			name: "parent-traversal-dir",
+			entries: []tarEntry{
+				{name: "latest/", mode: 0o755, typeflag: tar.TypeDir},
+				{name: "latest/../escape/", mode: 0o755, typeflag: tar.TypeDir},
+			},
+			want: "invalid tar path",
+		},
+		{
+			name: "absolute-symlink",
+			entries: []tarEntry{
+				{name: "latest/", mode: 0o755, typeflag: tar.TypeDir},
+				{name: "latest/link", linkname: "/etc/passwd", mode: 0o777, typeflag: tar.TypeSymlink},
+			},
+			want: "invalid symlink target",
+		},
+		{
+			name: "parent-traversal-symlink",
+			entries: []tarEntry{
+				{name: "latest/", mode: 0o755, typeflag: tar.TypeDir},
+				{name: "latest/link", linkname: "../escape", mode: 0o777, typeflag: tar.TypeSymlink},
+			},
+			want: "invalid symlink target",
+		},
+		{
+			name: "wrong-root",
+			entries: []tarEntry{
+				{name: "current/", mode: 0o755, typeflag: tar.TypeDir},
+				{name: "current/version", body: []byte("x"), mode: 0o644, typeflag: tar.TypeReg},
+			},
+			want: "invalid tar root",
+		},
+		{
+			name: "sibling-root",
+			entries: []tarEntry{
+				{name: "latest/", mode: 0o755, typeflag: tar.TypeDir},
+				{name: "sibling/", mode: 0o755, typeflag: tar.TypeDir},
+			},
+			want: "invalid tar root",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			archive := filepath.Join(tmp, tc.name+".tar.gz")
@@ -467,6 +515,11 @@ func TestMoveInjectedFailures(t *testing.T) {
 			assertErrContains(t, err, tc.want)
 			if tc.name == "rename" && string(mustReadUtilsFile(t, src)) != "x" {
 				t.Fatal("source was removed after final rename failure")
+			}
+			if tc.name == "copy" || tc.name == "stat" || tc.name == "chmod" || tc.name == "rename" {
+				if _, statErr := os.Stat(dst + ".tmp"); !os.IsNotExist(statErr) {
+					t.Fatalf("temporary destination remains after %s failure: %v", tc.name, statErr)
+				}
 			}
 		})
 	}
