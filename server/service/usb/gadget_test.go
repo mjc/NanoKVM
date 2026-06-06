@@ -415,6 +415,28 @@ func TestDisablingInactiveSelectorPreservesActiveMassStorage(t *testing.T) {
 	assertFile(t, LUNFile, "/data/installer.iso")
 }
 
+func TestSetVirtualMediaEnabledDisablesInactiveLegacyMediaPreservesDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, MassStorageFlag, LegacyNoMediaImage)
+	writeFile(t, DataDiskFlag, "")
+	writeFile(t, LUNFile, LegacyNoMediaImage)
+
+	if err := SetVirtualMediaEnabled(&fakeHID{}, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if !DataDiskEnabled() {
+		t.Fatal("disabling inactive legacy media disabled active data disk")
+	}
+	assertFile(t, MassStorageFlag, LegacyNoMediaImage)
+	assertFile(t, DataDiskFlag, "")
+	assertSymlink(t, MassStorageLink, MassStorageFunction)
+	assertFile(t, LUNFile, LegacyNoMediaImage)
+}
+
 func TestUnmountInactiveMediaPreservesActiveDataDisk(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
