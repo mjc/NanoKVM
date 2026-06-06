@@ -111,6 +111,9 @@ func processUpload(reader *multipart.Reader, contentLength int64) (string, error
 		if part.FormName() != "file" {
 			continue
 		}
+		if outPath != "" {
+			return "", fmt.Errorf("multiple files uploaded")
+		}
 
 		outPath, err = saveUploadedFile(part, contentLength)
 		if err != nil {
@@ -140,7 +143,13 @@ func saveUploadedFile(part *multipart.Part, contentLength int64) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("failed to create output file: %w", err)
 	}
+	removeOutput := true
 	defer out.Close()
+	defer func() {
+		if removeOutput {
+			_ = removeFile(outPath)
+		}
+	}()
 
 	pw := newProgressWriter(out, contentLength)
 	defer pw.Stop()
@@ -149,6 +158,7 @@ func saveUploadedFile(part *multipart.Part, contentLength int64) (string, error)
 		return "", fmt.Errorf("failed to write file: %w", err)
 	}
 
+	removeOutput = false
 	return outPath, nil
 }
 

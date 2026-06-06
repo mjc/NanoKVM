@@ -859,6 +859,37 @@ func TestProcessUploadAndSaveFailures(t *testing.T) {
 	if _, err := processUpload(reader, int64(len(truncated))); err == nil || !strings.Contains(err.Error(), "failed to write file") {
 		t.Fatalf("expected write failure, got %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(cacheDir, "upload.tar.gz")); !os.IsNotExist(err) {
+		t.Fatalf("partial upload remains after write failure: %v", err)
+	}
+
+	resetApplicationTestState(t)
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body.Reset()
+	mw = multipart.NewWriter(&body)
+	for _, filename := range []string{"first.tar.gz", "second.tar.gz"} {
+		part, err = mw.CreateFormFile("file", filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte("data")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/offline", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	reader, err = req.MultipartReader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := processUpload(reader, int64(body.Len())); err == nil || !strings.Contains(err.Error(), "multiple files") {
+		t.Fatalf("expected multiple file error, got %v", err)
+	}
 }
 
 func TestProgressWriter(t *testing.T) {
