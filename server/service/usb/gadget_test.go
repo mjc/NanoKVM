@@ -460,6 +460,33 @@ func TestUnmountInactiveMediaPreservesActiveDataDisk(t *testing.T) {
 	assertContains(t, LUNInquiryString, dataDiskInquiry)
 }
 
+func TestUnmountInactiveLegacyMediaPreservesActiveDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, MassStorageFlag, LegacyNoMediaImage)
+	writeFile(t, DataDiskFlag, "")
+	writeFile(t, LUNFile, LegacyNoMediaImage)
+	writeFile(t, LUNInquiryString, lunInquiry(dataDiskInquiry))
+
+	if err := SetLUNImage(&fakeHID{}, "", false); err != nil {
+		t.Fatal(err)
+	}
+
+	if !DataDiskEnabled() {
+		t.Fatal("unmounting inactive legacy media disabled active data disk")
+	}
+	if VirtualMediaEnabled() {
+		t.Fatal("unmounting inactive legacy media enabled virtual media")
+	}
+	assertFile(t, MassStorageFlag, LegacyNoMediaImage)
+	assertFile(t, DataDiskFlag, "")
+	assertSymlink(t, MassStorageLink, MassStorageFunction)
+	assertFile(t, LUNFile, LegacyNoMediaImage)
+	assertContains(t, LUNInquiryString, dataDiskInquiry)
+}
+
 func TestSetLUNImagePersistsBootMediaState(t *testing.T) {
 	withFakeGadget(t)
 
