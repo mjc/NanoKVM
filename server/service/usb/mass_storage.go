@@ -46,20 +46,7 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 		if currentMassStorageOwner() == massStorageOwnerDataDisk {
 			return nil
 		}
-		if !Exists(MassStorageFlag) {
-			return nil
-		}
-		if Exists(LUNFile) {
-			if err := DetachLUN(); err != nil {
-				return err
-			}
-		}
-		return errors.Join(
-			RemoveIfExists(MassStorageLink),
-			RemoveIfExists(MassStorageFlag),
-			RemoveIfExists(MassStorageROFlag),
-			RemoveIfExists(MassStorageCDROMFlag),
-		)
+		return disableMassStorageOwner(massStorageOwnerMedia)
 	})
 }
 
@@ -81,19 +68,7 @@ func SetDataDiskEnabled(h HIDController, enabled bool) error {
 		if currentMassStorageOwner() == massStorageOwnerMedia {
 			return RemoveIfExists(DataDiskFlag)
 		}
-		if Exists(LUNFile) {
-			if err := ClearString(LUNFile); err != nil {
-				return err
-			}
-		}
-		errs := []error{
-			RemoveIfExists(MassStorageLink),
-			RemoveIfExists(DataDiskFlag),
-		}
-		if readMassStorageBootState().hasLegacyDataDiskMediaState() {
-			errs = append(errs, removeMassStorageState())
-		}
-		return errors.Join(errs...)
+		return disableMassStorageOwner(massStorageOwnerDataDisk)
 	})
 }
 
@@ -110,6 +85,49 @@ func currentMassStorageOwner() massStorageOwner {
 		return massStorageOwnerNone
 	}
 	return readMassStorageBootState().owner()
+}
+
+func disableMassStorageOwner(owner massStorageOwner) error {
+	current := currentMassStorageOwner()
+	if current != owner {
+		if owner == massStorageOwnerDataDisk && current == massStorageOwnerMedia {
+			return RemoveIfExists(DataDiskFlag)
+		}
+		return nil
+	}
+
+	switch owner {
+	case massStorageOwnerMedia:
+		if !Exists(MassStorageFlag) {
+			return nil
+		}
+		if Exists(LUNFile) {
+			if err := DetachLUN(); err != nil {
+				return err
+			}
+		}
+		return errors.Join(
+			RemoveIfExists(MassStorageLink),
+			writeMassStorageBootState(noMassStorageBootState()),
+		)
+	case massStorageOwnerDataDisk:
+		if Exists(LUNFile) {
+			if err := ClearString(LUNFile); err != nil {
+				return err
+			}
+		}
+		state := readMassStorageBootState()
+		errs := []error{
+			RemoveIfExists(MassStorageLink),
+			RemoveIfExists(DataDiskFlag),
+		}
+		if state.hasLegacyDataDiskMediaState() {
+			errs = append(errs, removeMassStorageState())
+		}
+		return errors.Join(errs...)
+	default:
+		return nil
+	}
 }
 
 func readMassStorageBootState() massStorageBootState {
@@ -167,6 +185,11 @@ func massStorageFlagImage() (string, bool) {
 	return image, err == nil
 }
 
+func activeMediaBootState() (massStorageBootState, bool) {
+	state := readMassStorageBootState()
+	return state, Exists(MassStorageLink) && state.mountedMediaImage() != ""
+}
+
 func SetLUNImage(h HIDController, image string, cdrom bool) error {
 	image = NormalizeImage(image)
 	return WithDetachedUDC(h, func() error {
@@ -194,8 +217,7 @@ func DetachLUN() error {
 }
 
 func MountedImage() (string, error) {
-	state := readMassStorageBootState()
-	if !Exists(MassStorageLink) || state.mountedMediaImage() == "" {
+	if _, ok := activeMediaBootState(); !ok {
 		return "", nil
 	}
 	image, err := ReadTrimmed(LUNFile)
@@ -206,8 +228,7 @@ func MountedImage() (string, error) {
 }
 
 func CDROMFlag() (int64, error) {
-	state := readMassStorageBootState()
-	if !Exists(MassStorageLink) || state.mountedMediaImage() == "" {
+	if _, ok := activeMediaBootState(); !ok {
 		return 0, nil
 	}
 	flag, err := ReadTrimmed(LUNCDROM)
@@ -318,19 +339,21 @@ func removeMassStorageState() error {
 
 func writeMassStorageBootState(state massStorageBootState) error {
 	if state.dataDiskFlag {
+		if err := EnsureFile(DataDiskFlag); err != nil {
+			return err
+		}
 		return errors.Join(
-			EnsureFile(DataDiskFlag),
 			RemoveIfExists(MassStorageFlag),
 			RemoveIfExists(MassStorageROFlag),
 			RemoveIfExists(MassStorageCDROMFlag),
 		)
 	}
 
-	errs := []error{RemoveIfExists(DataDiskFlag)}
 	if state.mediaFlagExists {
 		if err := WriteString(MassStorageFlag, state.mediaImage); err != nil {
 			return err
 		}
+		errs := []error{RemoveIfExists(DataDiskFlag)}
 		if state.mediaReadOnly {
 			errs = append(errs, EnsureFile(MassStorageROFlag))
 		} else {
@@ -344,6 +367,7 @@ func writeMassStorageBootState(state massStorageBootState) error {
 		return errors.Join(errs...)
 	}
 
+	errs := []error{RemoveIfExists(DataDiskFlag)}
 	return errors.Join(
 		append(errs,
 			RemoveIfExists(MassStorageFlag),
