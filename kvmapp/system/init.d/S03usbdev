@@ -8,7 +8,88 @@ USB_NCM_FUNC='ncm.usb0'
 USB_RNDIS_FUNC='rndis.usb0'
 USB_MASS_STORAGE_FUNC='mass_storage.disk0'
 USB_MASS_STORAGE_INQUIRY='NanoKVM USB Mass Storage0520'
-USB_LEGACY_EMPTY_DISK_BACKING='/dev/mmcblk0p3'
+USB_CDROM_INQUIRY='NanoKVM USB CD/DVD-ROM  0520'
+USB_DATA_DISK_INQUIRY='NanoKVM USB Data Disk0520'
+USB_DATA_DISK_BACKING='/dev/mmcblk0p3'
+
+add_mass_storage_profile(){
+    profile_backing="$1"
+    profile_ro="$2"
+    profile_cdrom="$3"
+    profile_inquiry="$4"
+
+    mkdir "functions/${USB_MASS_STORAGE_FUNC}"
+    echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable"
+    echo "${profile_ro}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro"
+    echo "${profile_cdrom}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom"
+    printf '%s' "${profile_inquiry}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string"
+    if [ -n "${profile_backing}" ]
+    then
+        printf '%s' "${profile_backing}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
+    fi
+    ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
+}
+
+trim_boot_file(){
+    sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "${USB_BOOT_DIR}/$1"
+}
+
+set_virtual_media_profile(){
+    disk="$1"
+    profile_ro=0
+    profile_cdrom=0
+    profile_backing=''
+    profile_inquiry="${USB_MASS_STORAGE_INQUIRY}"
+
+    if [ -n "${disk}" ] && [ "${disk}" != "${USB_DATA_DISK_BACKING}" ]
+    then
+        profile_backing="${disk}"
+        if [ -e "${USB_BOOT_DIR}/usb.media0.cdrom" ]
+        then
+            profile_ro=1
+            profile_cdrom=1
+            profile_inquiry="${USB_CDROM_INQUIRY}"
+        elif [ -e "${USB_BOOT_DIR}/usb.media0.ro" ]
+        then
+            profile_ro=1
+        fi
+    fi
+
+    printf '%s\n%s\n%s\n%s\n' "${profile_backing}" "${profile_ro}" "${profile_cdrom}" "${profile_inquiry}"
+}
+
+set_data_disk_profile(){
+    printf '%s\n%s\n%s\n%s\n' "${USB_DATA_DISK_BACKING}" 0 0 "${USB_DATA_DISK_INQUIRY}"
+}
+
+add_selected_mass_storage_profile(){
+    profile="$1"
+    profile_backing=$(printf '%s\n' "${profile}" | sed -n '1p')
+    profile_ro=$(printf '%s\n' "${profile}" | sed -n '2p')
+    profile_cdrom=$(printf '%s\n' "${profile}" | sed -n '3p')
+    profile_inquiry=$(printf '%s\n' "${profile}" | sed -n '4p')
+    add_mass_storage_profile \
+        "${profile_backing}" \
+        "${profile_ro}" \
+        "${profile_cdrom}" \
+        "${profile_inquiry}"
+}
+
+add_boot_mass_storage_function(){
+    media_disk=''
+    if [ -e "${USB_BOOT_DIR}/usb.media0" ]
+    then
+        media_disk=$(trim_boot_file usb.media0)
+    fi
+
+    if [ -e "${USB_BOOT_DIR}/usb.media0" ] && { [ "${media_disk}" != "${USB_DATA_DISK_BACKING}" ] || [ ! -e "${USB_BOOT_DIR}/usb.disk0" ]; }
+    then
+        add_selected_mass_storage_profile "$(set_virtual_media_profile "${media_disk}")"
+    elif [ -e "${USB_BOOT_DIR}/usb.disk0" ]
+    then
+        add_selected_mass_storage_profile "$(set_data_disk_profile)"
+    fi
+}
 
 start_usb_dev(){
     prepare_usb_gadget "${USB_NORMAL_BCD_USB}" "${USB_NORMAL_BCD_DEVICE}" "${USB_NORMAL_CONFIG_ATTRIBUTES}" "${USB_NORMAL_MAX_POWER}"
@@ -28,30 +109,7 @@ start_usb_dev(){
         add_hid_functions "${USB_HID_REPORT_NORMAL_KEYBOARD}" "${USB_HID_REPORT_NORMAL_ABSOLUTE_MOUSE}"
     fi
 
-    if [ -e "${USB_BOOT_DIR}/usb.disk0" ]
-    then
-        mkdir "functions/${USB_MASS_STORAGE_FUNC}"
-        ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
-        echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable"
-        if [ -e "${USB_BOOT_DIR}/usb.disk0.ro" ]
-        then
-            echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro"
-            echo 0 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom"
-        fi
-        echo "${USB_MASS_STORAGE_INQUIRY}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string"
-        disk=$(cat "${USB_BOOT_DIR}/usb.disk0")
-        if [ -z "${disk}" ]
-        then
-            # if [ ! -e /mnt/usbdisk.img ]
-            # then
-            #         fallocate -l 8G /mnt/usbdisk.img
-            #         mkfs.vfat /mnt/usbdisk.img
-            # fi
-            echo "${USB_LEGACY_EMPTY_DISK_BACKING}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
-        else
-            printf '%s' "${disk}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
-        fi
-    fi
+    add_boot_mass_storage_function
 
     bind_first_udc
 }

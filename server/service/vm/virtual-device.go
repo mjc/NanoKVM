@@ -1,59 +1,21 @@
 package vm
 
 import (
-	"errors"
-	"os"
-	"os/exec"
-
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 
 	"NanoKVM-Server/proto"
 	"NanoKVM-Server/service/hid"
-)
-
-const (
-	virtualNetwork = "/boot/usb.rndis0"
-	virtualDisk    = "/boot/usb.disk0"
-)
-
-var (
-	mountNetworkCommands = []string{
-		"touch /boot/usb.rndis0",
-		"/etc/init.d/S03usbdev stop",
-		"/etc/init.d/S03usbdev start",
-	}
-
-	unmountNetworkCommands = []string{
-		"/etc/init.d/S03usbdev stop",
-		"rm -rf /sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0",
-		"rm /boot/usb.rndis0",
-		"/etc/init.d/S03usbdev start",
-	}
-
-	mountDiskCommands = []string{
-		"touch /boot/usb.disk0",
-		"/etc/init.d/S03usbdev stop",
-		"/etc/init.d/S03usbdev start",
-	}
-
-	unmountDiskCommands = []string{
-		"/etc/init.d/S03usbdev stop",
-		"rm -rf /sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0",
-		"rm /boot/usb.disk0",
-		"/etc/init.d/S03usbdev start",
-	}
+	"NanoKVM-Server/service/usb"
 )
 
 func (s *Service) GetVirtualDevice(c *gin.Context) {
 	var rsp proto.Response
 
-	network, _ := isDeviceExist(virtualNetwork)
-	disk, _ := isDeviceExist(virtualDisk)
-
 	rsp.OkRspWithData(c, &proto.GetVirtualDeviceRsp{
-		Network: network,
-		Disk:    disk,
+		Network: usb.RNDISEnabled(),
+		Media:   usb.VirtualMediaEnabled(),
+		Disk:    usb.DataDiskEnabled(),
 	})
 	log.Debugf("get virtual device success")
 }
@@ -67,68 +29,41 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 		return
 	}
 
-	var device string
-	var commands []string
+	var update func(bool) error
+	var enabled func() bool
 
 	switch req.Device {
 	case "network":
-		device = virtualNetwork
-
-		exist, _ := isDeviceExist(device)
-		if !exist {
-			commands = mountNetworkCommands
-		} else {
-			commands = unmountNetworkCommands
+		enabled = usb.RNDISEnabled
+		update = func(on bool) error {
+			return usb.SetRNDISEnabled(hid.GetHid(), on)
 		}
-	case "disk":
-		device = virtualDisk
 
-		exist, _ := isDeviceExist(device)
-		if !exist {
-			commands = mountDiskCommands
-		} else {
-			commands = unmountDiskCommands
+	case "media":
+		enabled = usb.VirtualMediaEnabled
+		update = func(on bool) error {
+			return usb.SetVirtualMediaEnabled(hid.GetHid(), on)
+		}
+
+	case "disk":
+		enabled = usb.DataDiskEnabled
+		update = func(on bool) error {
+			return usb.SetDataDiskEnabled(hid.GetHid(), on)
 		}
 	default:
 		rsp.ErrRsp(c, -2, "invalid arguments")
 		return
 	}
 
-	h := hid.GetHid()
-	h.Lock()
-	h.CloseNoLock()
-	defer func() {
-		h.OpenNoLock()
-		h.Unlock()
-	}()
-
-	for _, command := range commands {
-		err := exec.Command("sh", "-c", command).Run()
-		if err != nil {
-			rsp.ErrRsp(c, -3, "operation failed")
-			return
-		}
+	if err := update(!enabled()); err != nil {
+		log.Errorf("update virtual device %s failed: %s", req.Device, err)
+		rsp.ErrRsp(c, -3, "operation failed")
+		return
 	}
 
-	on, _ := isDeviceExist(device)
 	rsp.OkRspWithData(c, &proto.UpdateVirtualDeviceRsp{
-		On: on,
+		On: enabled(),
 	})
 
 	log.Debugf("update virtual device %s success", req.Device)
-}
-
-func isDeviceExist(device string) (bool, error) {
-	_, err := os.Stat(device)
-
-	if err == nil {
-		return true, nil
-	}
-
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-
-	log.Errorf("check file %s err: %s", device, err)
-	return false, err
 }

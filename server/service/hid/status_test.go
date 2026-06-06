@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"NanoKVM-Server/service/usb"
 )
 
 func TestGetHidMode(t *testing.T) {
@@ -40,11 +42,11 @@ func TestGetHidModeRejectsUnknownBcdDevice(t *testing.T) {
 }
 
 func TestGetHidModeRequiresModeFlag(t *testing.T) {
-	oldModeFlag := modeFlag
+	oldModeFlag := usb.ModeFlag
 	t.Cleanup(func() {
-		modeFlag = oldModeFlag
+		usb.ModeFlag = oldModeFlag
 	})
-	modeFlag = filepath.Join(t.TempDir(), "missing-bcdDevice")
+	usb.ModeFlag = filepath.Join(t.TempDir(), "missing-bcdDevice")
 
 	if _, err := getHidMode(); err == nil {
 		t.Fatal("getHidMode succeeded with a missing bcdDevice")
@@ -54,13 +56,13 @@ func TestGetHidModeRequiresModeFlag(t *testing.T) {
 func withModeFlag(t *testing.T, content string) {
 	t.Helper()
 
-	oldModeFlag := modeFlag
+	oldModeFlag := usb.ModeFlag
 	t.Cleanup(func() {
-		modeFlag = oldModeFlag
+		usb.ModeFlag = oldModeFlag
 	})
 
-	modeFlag = filepath.Join(t.TempDir(), "bcdDevice")
-	if err := os.WriteFile(modeFlag, []byte(content), 0o666); err != nil {
+	usb.ModeFlag = filepath.Join(t.TempDir(), "bcdDevice")
+	if err := os.WriteFile(usb.ModeFlag, []byte(content), 0o666); err != nil {
 		t.Fatal(err)
 	}
 }
