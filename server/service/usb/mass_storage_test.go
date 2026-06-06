@@ -1,99 +1,10 @@
 package usb
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 )
-
-type fakeHID struct {
-	locks  int
-	closes int
-	opens  int
-}
-
-func (h *fakeHID) Lock() {
-	h.locks++
-}
-
-func (h *fakeHID) Unlock() {}
-
-func (h *fakeHID) CloseNoLock() {
-	h.closes++
-}
-
-func (h *fakeHID) OpenNoLockWithRetry(time.Duration, time.Duration) error {
-	h.opens++
-	return nil
-}
-
-func withFakeGadget(t *testing.T) {
-	t.Helper()
-
-	old := []string{
-		GadgetPath, ConfigPath, ModeFlag, UDCPath, UDCClass, OTGRole,
-		MassStorageFunction, MassStorageLink, MassStorageFlag, MassStorageROFlag,
-		MassStorageCDROMFlag, LUNPath, LUNFile, LUNCDROM, LUNInquiryString, LUNRO, LUNForcedEject,
-		DataDiskFlag, RNDISFunction, RNDISLink, RNDISFlag,
-	}
-	t.Cleanup(func() {
-		GadgetPath, ConfigPath, ModeFlag, UDCPath, UDCClass, OTGRole = old[0], old[1], old[2], old[3], old[4], old[5]
-		MassStorageFunction, MassStorageLink, MassStorageFlag, MassStorageROFlag = old[6], old[7], old[8], old[9]
-		MassStorageCDROMFlag, LUNPath, LUNFile, LUNCDROM, LUNInquiryString, LUNRO, LUNForcedEject = old[10], old[11], old[12], old[13], old[14], old[15], old[16]
-		DataDiskFlag, RNDISFunction, RNDISLink, RNDISFlag = old[17], old[18], old[19], old[20]
-	})
-
-	root := t.TempDir()
-	GadgetPath = filepath.Join(root, "g0")
-	ConfigPath = filepath.Join(GadgetPath, "configs", "c.1")
-	ModeFlag = filepath.Join(GadgetPath, "bcdDevice")
-	UDCPath = filepath.Join(GadgetPath, "UDC")
-	UDCClass = filepath.Join(root, "udc")
-	OTGRole = filepath.Join(root, "otg_role")
-
-	MassStorageFunction = filepath.Join(GadgetPath, "functions", "mass_storage.disk0")
-	MassStorageLink = filepath.Join(ConfigPath, "mass_storage.disk0")
-	MassStorageFlag = filepath.Join(root, "boot", "usb.media0")
-	MassStorageROFlag = filepath.Join(root, "boot", "usb.media0.ro")
-	MassStorageCDROMFlag = filepath.Join(root, "boot", "usb.media0.cdrom")
-	LUNPath = filepath.Join(MassStorageFunction, "lun.0")
-	LUNFile = filepath.Join(LUNPath, "file")
-	LUNCDROM = filepath.Join(LUNPath, "cdrom")
-	LUNInquiryString = filepath.Join(LUNPath, "inquiry_string")
-	LUNRO = filepath.Join(LUNPath, "ro")
-	LUNForcedEject = filepath.Join(LUNPath, "forced_eject")
-
-	DataDiskFlag = filepath.Join(root, "boot", "usb.disk0")
-
-	RNDISFunction = filepath.Join(GadgetPath, "functions", "rndis.usb0")
-	RNDISLink = filepath.Join(ConfigPath, "rndis.usb0")
-	RNDISFlag = filepath.Join(root, "boot", "usb.rndis0")
-
-	for _, dir := range []string{
-		ConfigPath,
-		UDCClass,
-		filepath.Dir(MassStorageFlag),
-		LUNPath,
-		filepath.Dir(RNDISFunction),
-	} {
-		if err := os.MkdirAll(dir, 0o777); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	writeFile(t, filepath.Join(UDCClass, "4340000.usb"), "")
-	writeFile(t, UDCPath, "4340000.usb")
-	writeFile(t, OTGRole, "device")
-	for _, path := range []string{
-		LUNFile, LUNCDROM, LUNInquiryString, LUNRO,
-		filepath.Join(LUNPath, "removable"),
-	} {
-		writeFile(t, path, "")
-	}
-}
 
 func TestSetLUNImageMountsExplicitCDROM(t *testing.T) {
 	withFakeGadget(t)
@@ -500,6 +411,29 @@ func TestMassStorageLUNProfiles(t *testing.T) {
 			assertFile(t, LUNCDROM, tt.wantCDROM)
 			assertContains(t, LUNInquiryString, tt.wantQuery)
 		})
+	}
+}
+
+func TestSwitchMassStorageOwnerPersistsOnlyAfterPrepare(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Remove(LUNRO); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNRO, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	persisted := false
+
+	err := switchMassStorageOwner(mediaLUNProfile("/data/installer.iso", true), true, func() error {
+		persisted = true
+		return nil
+	})
+
+	if err == nil {
+		t.Fatal("switchMassStorageOwner succeeded despite prepare failure")
+	}
+	if persisted {
+		t.Fatal("switchMassStorageOwner persisted state after prepare failure")
 	}
 }
 
@@ -1163,42 +1097,6 @@ func TestCDROMFlagIgnoresStaleDataDiskCDROMState(t *testing.T) {
 	}
 }
 
-func TestSetRNDISEnabledTogglesFlagAndLink(t *testing.T) {
-	withFakeGadget(t)
-
-	if err := SetRNDISEnabled(&fakeHID{}, true); err != nil {
-		t.Fatal(err)
-	}
-	assertFile(t, RNDISFlag, "")
-	if !Exists(RNDISFunction) {
-		t.Fatal("RNDIS function was not created")
-	}
-	assertSymlink(t, RNDISLink, RNDISFunction)
-
-	if err := SetRNDISEnabled(&fakeHID{}, false); err != nil {
-		t.Fatal(err)
-	}
-	if Exists(RNDISFlag) {
-		t.Fatal("RNDIS flag still exists after disabling RNDIS")
-	}
-	if Exists(RNDISLink) {
-		t.Fatal("RNDIS link still exists after disabling RNDIS")
-	}
-}
-
-func TestPrepareRNDISFunctionCreatesAndLinks(t *testing.T) {
-	withFakeGadget(t)
-
-	if err := prepareRNDISFunction(); err != nil {
-		t.Fatal(err)
-	}
-
-	if !Exists(RNDISFunction) {
-		t.Fatal("RNDIS function was not created")
-	}
-	assertSymlink(t, RNDISLink, RNDISFunction)
-}
-
 func TestEnabledStateComesFromConfigLinks(t *testing.T) {
 	withFakeGadget(t)
 	writeFile(t, MassStorageFlag, "")
@@ -1430,145 +1328,81 @@ func TestMassStorageBootStateClassifiesLegacyFlags(t *testing.T) {
 	}
 }
 
-func TestWithDetachedUDCReattachesAfterMutationError(t *testing.T) {
-	withFakeGadget(t)
-	hid := &fakeHID{}
-	mutateErr := errors.New("boom")
-
-	err := WithDetachedUDC(hid, func() error {
-		assertFile(t, UDCPath, "\n")
-		return mutateErr
-	})
-
-	if !errors.Is(err, mutateErr) {
-		t.Fatalf("error = %v, want joined mutation error", err)
-	}
-	assertFile(t, UDCPath, "4340000.usb")
-	assertFile(t, OTGRole, "device")
-	assertHIDCycle(t, hid)
-}
-
-func TestWithDetachedUDCReportsDetachAttachAndOpenErrors(t *testing.T) {
-	withFakeGadget(t)
-	if err := os.Remove(UDCPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(UDCPath, 0o777); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(filepath.Join(UDCClass, "4340000.usb")); err != nil {
-		t.Fatal(err)
-	}
-	hid := &failingHID{}
-	mutated := false
-
-	err := WithDetachedUDC(hid, func() error {
-		mutated = true
-		return errors.New("mutation failed")
-	})
-	if err == nil {
-		t.Fatal("WithDetachedUDC succeeded with detach, attach, mutation, and open failures")
-	}
-	for _, want := range []string{"clear", "open failed"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q does not contain %q", err, want)
-		}
-	}
-	if mutated {
-		t.Fatal("WithDetachedUDC ran mutation after detach failure")
-	}
-	if strings.Contains(err.Error(), "mutation failed") || strings.Contains(err.Error(), "no UDC found") {
-		t.Fatalf("error %q includes mutation or attach failure after detach failure", err)
-	}
-}
-
-func TestFirstUDCRequiresADevice(t *testing.T) {
-	withFakeGadget(t)
-	if err := os.Remove(filepath.Join(UDCClass, "4340000.usb")); err != nil {
-		t.Fatal(err)
+func TestWriteMassStorageBootState(t *testing.T) {
+	tests := []struct {
+		name          string
+		state         massStorageBootState
+		wantMedia     *string
+		wantDataDisk  bool
+		wantReadOnly  bool
+		wantCDROM     bool
+		staleReadOnly bool
+		staleCDROM    bool
+		staleDataDisk bool
+	}{
+		{
+			name:      "empty media",
+			state:     mediaBootState("", false),
+			wantMedia: stringPtr(""),
+		},
+		{
+			name:          "cdrom media",
+			state:         mediaBootState("/data/installer.iso", true),
+			wantMedia:     stringPtr("/data/installer.iso"),
+			wantReadOnly:  true,
+			wantCDROM:     true,
+			staleDataDisk: true,
+		},
+		{
+			name:          "data disk",
+			state:         dataDiskBootState(),
+			wantDataDisk:  true,
+			staleReadOnly: true,
+			staleCDROM:    true,
+		},
+		{
+			name:          "none",
+			state:         noMassStorageBootState(),
+			staleReadOnly: true,
+			staleCDROM:    true,
+			staleDataDisk: true,
+		},
 	}
 
-	if _, err := FirstUDC(); err == nil {
-		t.Fatal("FirstUDC succeeded with no UDC entries")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withFakeGadget(t)
+			writeFile(t, MassStorageFlag, "/data/stale.iso")
+			if tt.staleReadOnly {
+				writeFile(t, MassStorageROFlag, "")
+			}
+			if tt.staleCDROM {
+				writeFile(t, MassStorageCDROMFlag, "")
+			}
+			if tt.staleDataDisk {
+				writeFile(t, DataDiskFlag, "")
+			}
 
-func TestFirstUDCSelectsSortedFirstDevice(t *testing.T) {
-	withFakeGadget(t)
-	writeFile(t, filepath.Join(UDCClass, "4330000.usb"), "")
-	writeFile(t, filepath.Join(UDCClass, "4350000.usb"), "")
+			if err := writeMassStorageBootState(tt.state); err != nil {
+				t.Fatal(err)
+			}
 
-	udc, err := FirstUDC()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if udc != "4330000.usb" {
-		t.Fatalf("FirstUDC() = %q, want sorted first device", udc)
-	}
-}
-
-type failingHID struct{}
-
-func (h *failingHID) Lock() {}
-
-func (h *failingHID) Unlock() {}
-
-func (h *failingHID) CloseNoLock() {}
-
-func (h *failingHID) OpenNoLockWithRetry(time.Duration, time.Duration) error {
-	return errors.New("open failed")
-}
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o666); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func stringPtr(value string) *string {
-	return &value
-}
-
-func assertFile(t *testing.T, path, want string) {
-	t.Helper()
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != want {
-		t.Fatalf("%s = %q, want %q", path, string(got), want)
-	}
-}
-
-func assertContains(t *testing.T, path, want string) {
-	t.Helper()
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(got), want) {
-		t.Fatalf("%s = %q, want substring %q", path, string(got), want)
-	}
-}
-
-func assertSymlink(t *testing.T, path, want string) {
-	t.Helper()
-	got, err := os.Readlink(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != want {
-		t.Fatalf("symlink %s -> %q, want %q", path, got, want)
-	}
-}
-
-func assertHIDCycle(t *testing.T, hid *fakeHID) {
-	t.Helper()
-	if hid.locks != 1 || hid.closes != 1 || hid.opens != 1 {
-		t.Fatalf("hid cycle locks=%d closes=%d opens=%d, want 1/1/1", hid.locks, hid.closes, hid.opens)
+			if tt.wantMedia == nil {
+				if Exists(MassStorageFlag) {
+					t.Fatal("media flag exists")
+				}
+			} else {
+				assertFile(t, MassStorageFlag, *tt.wantMedia)
+			}
+			if got := Exists(DataDiskFlag); got != tt.wantDataDisk {
+				t.Fatalf("data disk flag exists = %v, want %v", got, tt.wantDataDisk)
+			}
+			if got := Exists(MassStorageROFlag); got != tt.wantReadOnly {
+				t.Fatalf("read-only flag exists = %v, want %v", got, tt.wantReadOnly)
+			}
+			if got := Exists(MassStorageCDROMFlag); got != tt.wantCDROM {
+				t.Fatalf("cdrom flag exists = %v, want %v", got, tt.wantCDROM)
+			}
+		})
 	}
 }

@@ -12,20 +12,20 @@ USB_CDROM_INQUIRY='NanoKVM USB CD/DVD-ROM  0520'
 USB_DATA_DISK_INQUIRY='NanoKVM USB Data Disk0520'
 USB_DATA_DISK_BACKING='/dev/mmcblk0p3'
 
-add_mass_storage_function(){
-    backing="$1"
-    ro="$2"
-    cdrom="$3"
-    inquiry="$4"
+add_mass_storage_profile(){
+    profile_backing="$1"
+    profile_ro="$2"
+    profile_cdrom="$3"
+    profile_inquiry="$4"
 
     mkdir "functions/${USB_MASS_STORAGE_FUNC}"
     echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable"
-    echo "${ro}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro"
-    echo "${cdrom}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom"
-    printf '%s' "${inquiry}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string"
-    if [ -n "${backing}" ]
+    echo "${profile_ro}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro"
+    echo "${profile_cdrom}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom"
+    printf '%s' "${profile_inquiry}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string"
+    if [ -n "${profile_backing}" ]
     then
-        printf '%s' "${backing}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
+        printf '%s' "${profile_backing}" > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/file"
     fi
     ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
 }
@@ -34,32 +34,41 @@ trim_boot_file(){
     sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "${USB_BOOT_DIR}/$1"
 }
 
-add_virtual_media_function(){
+set_virtual_media_profile(){
     disk="$1"
-    media_ro=0
-    media_cdrom=0
-    media_backing=''
-    media_inquiry="${USB_MASS_STORAGE_INQUIRY}"
+    mass_storage_profile_ro=0
+    mass_storage_profile_cdrom=0
+    mass_storage_profile_backing=''
+    mass_storage_profile_inquiry="${USB_MASS_STORAGE_INQUIRY}"
 
     if [ -n "${disk}" ] && [ "${disk}" != "${USB_DATA_DISK_BACKING}" ]
     then
-        media_backing="${disk}"
+        mass_storage_profile_backing="${disk}"
         if [ -e "${USB_BOOT_DIR}/usb.media0.cdrom" ]
         then
-            media_ro=1
-            media_cdrom=1
-            media_inquiry="${USB_CDROM_INQUIRY}"
+            mass_storage_profile_ro=1
+            mass_storage_profile_cdrom=1
+            mass_storage_profile_inquiry="${USB_CDROM_INQUIRY}"
         elif [ -e "${USB_BOOT_DIR}/usb.media0.ro" ]
         then
-            media_ro=1
+            mass_storage_profile_ro=1
         fi
     fi
-
-    add_mass_storage_function "${media_backing}" "${media_ro}" "${media_cdrom}" "${media_inquiry}"
 }
 
-add_data_disk_function(){
-    add_mass_storage_function "${USB_DATA_DISK_BACKING}" 0 0 "${USB_DATA_DISK_INQUIRY}"
+set_data_disk_profile(){
+    mass_storage_profile_backing="${USB_DATA_DISK_BACKING}"
+    mass_storage_profile_ro=0
+    mass_storage_profile_cdrom=0
+    mass_storage_profile_inquiry="${USB_DATA_DISK_INQUIRY}"
+}
+
+add_selected_mass_storage_profile(){
+    add_mass_storage_profile \
+        "${mass_storage_profile_backing}" \
+        "${mass_storage_profile_ro}" \
+        "${mass_storage_profile_cdrom}" \
+        "${mass_storage_profile_inquiry}"
 }
 
 add_boot_mass_storage_function(){
@@ -71,10 +80,12 @@ add_boot_mass_storage_function(){
 
     if [ -e "${USB_BOOT_DIR}/usb.media0" ] && { [ "${media_disk}" != "${USB_DATA_DISK_BACKING}" ] || [ ! -e "${USB_BOOT_DIR}/usb.disk0" ]; }
     then
-        add_virtual_media_function "${media_disk}"
+        set_virtual_media_profile "${media_disk}"
+        add_selected_mass_storage_profile
     elif [ -e "${USB_BOOT_DIR}/usb.disk0" ]
     then
-        add_data_disk_function
+        set_data_disk_profile
+        add_selected_mass_storage_profile
     fi
 }
 

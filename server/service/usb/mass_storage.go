@@ -26,18 +26,20 @@ type massStorageLUNProfile struct {
 type massStorageBootState struct {
 	mediaFlagExists bool
 	mediaImage      string
+	mediaReadOnly   bool
+	mediaCDROM      bool
 	dataDiskFlag    bool
 }
 
 func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
-			if err := prepareMassStorageLUN("", false); err != nil {
-				return err
-			}
-			return errors.Join(
-				persistMassStorageState("", false),
-				RemoveIfExists(DataDiskFlag),
+			return switchMassStorageOwner(
+				mediaLUNProfile("", false),
+				true,
+				func() error {
+					return writeMassStorageBootState(mediaBootState("", false))
+				},
 			)
 		}
 
@@ -64,12 +66,12 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 func SetDataDiskEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
-			if err := prepareDataDiskLUN(); err != nil {
-				return err
-			}
-			return errors.Join(
-				EnsureFile(DataDiskFlag),
-				removeMassStorageState(),
+			return switchMassStorageOwner(
+				dataDiskLUNProfile(),
+				false,
+				func() error {
+					return writeMassStorageBootState(dataDiskBootState())
+				},
 			)
 		}
 
@@ -115,6 +117,8 @@ func readMassStorageBootState() massStorageBootState {
 	return massStorageBootState{
 		mediaFlagExists: mediaFlagExists,
 		mediaImage:      image,
+		mediaReadOnly:   Exists(MassStorageROFlag),
+		mediaCDROM:      Exists(MassStorageCDROMFlag),
 		dataDiskFlag:    Exists(DataDiskFlag),
 	}
 }
@@ -140,6 +144,24 @@ func (state massStorageBootState) hasLegacyDataDiskMediaState() bool {
 	return state.mediaFlagExists && state.mediaImage == LegacyNoMediaImage
 }
 
+func mediaBootState(image string, cdrom bool) massStorageBootState {
+	cdrom = image != "" && cdrom
+	return massStorageBootState{
+		mediaFlagExists: true,
+		mediaImage:      image,
+		mediaReadOnly:   cdrom,
+		mediaCDROM:      cdrom,
+	}
+}
+
+func dataDiskBootState() massStorageBootState {
+	return massStorageBootState{dataDiskFlag: true}
+}
+
+func noMassStorageBootState() massStorageBootState {
+	return massStorageBootState{}
+}
+
 func massStorageFlagImage() (string, bool) {
 	image, err := ReadTrimmed(MassStorageFlag)
 	return image, err == nil
@@ -151,12 +173,12 @@ func SetLUNImage(h HIDController, image string, cdrom bool) error {
 		if image == "" && currentMassStorageOwner() == massStorageOwnerDataDisk {
 			return nil
 		}
-		if err := prepareMassStorageLUN(image, cdrom); err != nil {
-			return err
-		}
-		return errors.Join(
-			persistMassStorageState(image, cdrom),
-			RemoveIfExists(DataDiskFlag),
+		return switchMassStorageOwner(
+			mediaLUNProfile(image, cdrom),
+			true,
+			func() error {
+				return writeMassStorageBootState(mediaBootState(image, cdrom))
+			},
 		)
 	})
 }
@@ -216,6 +238,13 @@ func prepareMassStorageLUN(image string, cdrom bool) error {
 
 func prepareDataDiskLUN() error {
 	return prepareSharedMassStorageLUN(dataDiskLUNProfile(), false)
+}
+
+func switchMassStorageOwner(profile massStorageLUNProfile, detach bool, persist func() error) error {
+	if err := prepareSharedMassStorageLUN(profile, detach); err != nil {
+		return err
+	}
+	return persist()
 }
 
 func prepareSharedMassStorageLUN(profile massStorageLUNProfile, detach bool) error {
@@ -283,25 +312,44 @@ func boolFlag(enabled bool) string {
 	return "0"
 }
 
-func persistMassStorageState(image string, cdrom bool) error {
-	if err := WriteString(MassStorageFlag, image); err != nil {
-		return err
-	}
-
-	errs := []error{}
-	if image != "" && cdrom {
-		errs = append(errs, EnsureFile(MassStorageROFlag), EnsureFile(MassStorageCDROMFlag))
-	} else {
-		errs = append(errs, RemoveIfExists(MassStorageROFlag), RemoveIfExists(MassStorageCDROMFlag))
-	}
-	return errors.Join(errs...)
+func removeMassStorageState() error {
+	return writeMassStorageBootState(noMassStorageBootState())
 }
 
-func removeMassStorageState() error {
+func writeMassStorageBootState(state massStorageBootState) error {
+	if state.dataDiskFlag {
+		return errors.Join(
+			EnsureFile(DataDiskFlag),
+			RemoveIfExists(MassStorageFlag),
+			RemoveIfExists(MassStorageROFlag),
+			RemoveIfExists(MassStorageCDROMFlag),
+		)
+	}
+
+	errs := []error{RemoveIfExists(DataDiskFlag)}
+	if state.mediaFlagExists {
+		if err := WriteString(MassStorageFlag, state.mediaImage); err != nil {
+			return err
+		}
+		if state.mediaReadOnly {
+			errs = append(errs, EnsureFile(MassStorageROFlag))
+		} else {
+			errs = append(errs, RemoveIfExists(MassStorageROFlag))
+		}
+		if state.mediaCDROM {
+			errs = append(errs, EnsureFile(MassStorageCDROMFlag))
+		} else {
+			errs = append(errs, RemoveIfExists(MassStorageCDROMFlag))
+		}
+		return errors.Join(errs...)
+	}
+
 	return errors.Join(
-		RemoveIfExists(MassStorageFlag),
-		RemoveIfExists(MassStorageROFlag),
-		RemoveIfExists(MassStorageCDROMFlag),
+		append(errs,
+			RemoveIfExists(MassStorageFlag),
+			RemoveIfExists(MassStorageROFlag),
+			RemoveIfExists(MassStorageCDROMFlag),
+		)...,
 	)
 }
 
