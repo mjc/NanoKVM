@@ -160,6 +160,52 @@ func TestSetLUNImageUsesForcedEjectWhenAvailable(t *testing.T) {
 	assertFile(t, LUNFile, "\n")
 }
 
+func TestSetLUNImageFailurePreservesDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetDataDiskEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(LUNRO); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNRO, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetLUNImage(hid, "/data/installer.iso", true); err == nil {
+		t.Fatal("SetLUNImage succeeded despite unwritable ro flag")
+	}
+
+	if !DataDiskEnabled() {
+		t.Fatal("failed image mount disabled active data disk")
+	}
+	if Exists(MassStorageFlag) {
+		t.Fatal("failed image mount left media flag behind")
+	}
+}
+
+func TestSetLUNImageFailurePreservesMountedMedia(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetLUNImage(hid, "/data/old.iso", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(LUNRO); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNRO, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetLUNImage(hid, "/data/new.iso", true); err == nil {
+		t.Fatal("SetLUNImage succeeded despite unwritable ro flag")
+	}
+
+	assertFile(t, MassStorageFlag, "/data/old.iso")
+	assertFile(t, LUNFile, "/data/old.iso")
+}
+
 func TestLegacyNoMediaImageIsHiddenFromMountedImage(t *testing.T) {
 	withFakeGadget(t)
 	writeFile(t, LUNFile, LegacyNoMediaImage)
