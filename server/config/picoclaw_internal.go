@@ -1,8 +1,8 @@
 package config
 
 import (
+	"NanoKVM-Server/utils"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -35,10 +35,7 @@ func GetPicoclawInternalToken() (string, error) {
 	}
 
 	token := generateRandomSecretKey()
-	if err := os.MkdirAll(filepath.Dir(picoclawInternalTokenFile), 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(picoclawInternalTokenFile, []byte(token+"\n"), 0o600); err != nil {
+	if err := utils.WritePrivateFile(picoclawInternalTokenFile, []byte(token+"\n")); err != nil {
 		return "", err
 	}
 
@@ -52,7 +49,7 @@ func EnsurePicoclawInternalToken() error {
 }
 
 func readPicoclawInternalToken() (string, error) {
-	data, err := os.ReadFile(picoclawInternalTokenFile)
+	data, err := utils.ReadPrivateFile(picoclawInternalTokenFile)
 	if err != nil {
 		return "", err
 	}
