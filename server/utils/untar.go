@@ -88,6 +88,8 @@ func UnTarGz(srcFile string, destDir string) (string, error) {
 			if err := os.Symlink(header.Linkname, filename); err != nil {
 				return "", err
 			}
+		default:
+			return "", fmt.Errorf("unsupported tar entry: %s", header.Name)
 		}
 	}
 

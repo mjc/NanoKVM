@@ -35,6 +35,31 @@ func MoveFile(src, dst string) error {
 
 func MoveFileCrossFS(src, dst string) error {
 	tmp := dst + ".tmp"
+	srcInfo, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if srcInfo.Mode()&os.ModeSymlink != 0 {
+		link, err := os.Readlink(src)
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(link, tmp); err != nil {
+			return err
+		}
+		removeTmp := true
+		defer func() {
+			if removeTmp {
+				_ = moveRemove(tmp)
+			}
+		}()
+		if err := moveRename(tmp, dst); err != nil {
+			return err
+		}
+		removeTmp = false
+		return moveRemove(src)
+	}
+
 	srcFile, err := moveOpen(src)
 	if err != nil {
 		return err
@@ -72,8 +97,7 @@ func MoveFileCrossFS(src, dst string) error {
 		return err
 	}
 	removeTmp = false
-	_ = moveRemove(src)
-	return nil
+	return moveRemove(src)
 }
 
 func MoveFilesRecursively(src, dst string) error {

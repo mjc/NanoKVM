@@ -231,7 +231,6 @@ func TestUnTarGzFailures(t *testing.T) {
 	writeTarGz(t, validArchive, []tarEntry{
 		{name: "latest/", mode: 0o755, typeflag: tar.TypeDir},
 		{name: "latest/version", body: []byte("1.0.0"), mode: 0o644, typeflag: tar.TypeReg},
-		{name: "latest/fifo", mode: 0o644, typeflag: tar.TypeFifo},
 	})
 	if root, err := UnTarGz(validArchive, filepath.Join(tmp, "valid-dest")); err != nil || !strings.HasSuffix(root, "latest") {
 		t.Fatalf("valid archive = %q, %v", root, err)
@@ -355,6 +354,14 @@ func TestUnTarGzFailures(t *testing.T) {
 				{name: "sibling/", mode: 0o755, typeflag: tar.TypeDir},
 			},
 			want: "invalid tar root",
+		},
+		{
+			name: "unsupported-fifo",
+			entries: []tarEntry{
+				{name: "latest/", mode: 0o755, typeflag: tar.TypeDir},
+				{name: "latest/fifo", mode: 0o644, typeflag: tar.TypeFifo},
+			},
+			want: "unsupported tar entry",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -551,6 +558,16 @@ func TestMoveInjectedFailures(t *testing.T) {
 			},
 			want: "rename failed",
 		},
+		{
+			name: "remove",
+			run:  MoveFileCrossFS,
+			hook: func() {
+				moveRemove = func(string) error {
+					return errors.New("remove failed")
+				}
+			},
+			want: "remove failed",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resetMoveHooks()
@@ -578,6 +595,38 @@ func TestMoveInjectedFailures(t *testing.T) {
 				if _, statErr := os.Stat(dst + ".tmp"); !os.IsNotExist(statErr) {
 					t.Fatalf("temporary destination remains after %s failure: %v", tc.name, statErr)
 				}
+			}
+		})
+	}
+
+	if runtime.GOOS != "windows" {
+		t.Run("cross-device-symlink", func(t *testing.T) {
+			resetMoveHooks()
+			target := filepath.Join(tmp, "symlink-target")
+			if err := os.WriteFile(target, []byte("target body"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			src := filepath.Join(tmp, "symlink-src")
+			if err := os.Symlink(filepath.Base(target), src); err != nil {
+				t.Fatal(err)
+			}
+			dst := filepath.Join(tmp, "symlink-dst")
+			moveRename = func(oldpath, newpath string) error {
+				if oldpath == src {
+					return errors.New("invalid cross-device link")
+				}
+				return os.Rename(oldpath, newpath)
+			}
+
+			if err := MoveFile(src, dst); err != nil {
+				t.Fatal(err)
+			}
+			link, err := os.Readlink(dst)
+			if err != nil {
+				t.Fatalf("destination is not a symlink: %v", err)
+			}
+			if link != filepath.Base(target) {
+				t.Fatalf("symlink target = %q", link)
 			}
 		})
 	}
