@@ -143,13 +143,16 @@ func FirstUDC() (string, error) {
 func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
-			if err := ensureMassStorageLink(); err != nil {
+			if err := ensureMassStorageFunction(); err != nil {
 				return err
 			}
 			if err := setMassStorageLUNMode("", false); err != nil {
 				return err
 			}
 			if err := DetachLUN(); err != nil {
+				return err
+			}
+			if err := linkMassStorageFunction(); err != nil {
 				return err
 			}
 			return errors.Join(
@@ -181,10 +184,13 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 func SetDataDiskEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
-			if err := ensureDataDiskLink(); err != nil {
+			if err := ensureDataDiskFunction(); err != nil {
 				return err
 			}
 			if err := WriteString(DataDiskLUNFile, LegacyNoMediaImage); err != nil {
+				return err
+			}
+			if err := ensureDataDiskLink(); err != nil {
 				return err
 			}
 			return errors.Join(
@@ -262,7 +268,7 @@ func SetLUNImage(h HIDController, image string, cdrom bool) error {
 		if image == "" && DataDiskEnabled() {
 			return nil
 		}
-		if err := ensureMassStorageLink(); err != nil {
+		if err := ensureMassStorageFunction(); err != nil {
 			return err
 		}
 
@@ -273,6 +279,9 @@ func SetLUNImage(h HIDController, image string, cdrom bool) error {
 			return err
 		}
 		if err := attachMassStorageImage(image); err != nil {
+			return err
+		}
+		if err := linkMassStorageFunction(); err != nil {
 			return err
 		}
 		return errors.Join(
@@ -446,6 +455,10 @@ func ensureMassStorageLink() error {
 	if err := ensureMassStorageFunction(); err != nil {
 		return err
 	}
+	return linkMassStorageFunction()
+}
+
+func linkMassStorageFunction() error {
 	if !Exists(MassStorageLink) {
 		return os.Symlink(MassStorageFunction, MassStorageLink)
 	}
