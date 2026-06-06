@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -81,6 +82,8 @@ func checkDownloadInProgress() error {
 	if _, err := statFile(sentinelFilePath); err == nil {
 		log.Debug("Download in progress")
 		return fmt.Errorf("download already in progress")
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check download progress: %w", err)
 	}
 	return nil
 }
@@ -172,6 +175,10 @@ func validateFilename(filename string) error {
 	if !validFilenameRegex.MatchString(filename) {
 		log.Warnf("Invalid filename characters: %s", filename)
 		return fmt.Errorf("invalid filename: contains invalid characters")
+	}
+	if !strings.HasSuffix(filename, ".tar.gz") {
+		log.Warnf("Invalid filename extension: %s", filename)
+		return fmt.Errorf("invalid filename: must end with .tar.gz")
 	}
 
 	return nil

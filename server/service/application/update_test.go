@@ -650,6 +650,18 @@ func TestOfflineUpdateFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	statFile = func(string) (os.FileInfo, error) {
+		return nil, errors.New("stat failed")
+	}
+	if err := checkDownloadInProgress(); err == nil || !strings.Contains(err.Error(), "stat failed") {
+		t.Fatalf("expected sentinel stat error, got %v", err)
+	}
+	c, _ = responseRecorder(http.MethodPost, "/offline", strings.NewReader(""), "multipart/form-data")
+	if err := offlineUpdate(c); err == nil || !strings.Contains(err.Error(), "stat failed") {
+		t.Fatalf("expected offline sentinel stat error, got %v", err)
+	}
+	statFile = os.Stat
+
 	writeFile = func(string, []byte, os.FileMode) error {
 		return errors.New("sentinel failed")
 	}
@@ -752,7 +764,7 @@ func TestProcessUploadAndSaveFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, filename := range []string{"../bad.tar.gz", "..bad", "bad name.tar.gz", "."} {
+	for _, filename := range []string{"../bad.tar.gz", "..bad", "bad name.tar.gz", ".", "bad.zip", "bad.tar", "bad.gz", "bad"} {
 		if err := validateFilename(filename); err == nil {
 			t.Fatalf("filename %q unexpectedly valid", filename)
 		}
