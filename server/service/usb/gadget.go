@@ -159,16 +159,17 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 		if !Exists(MassStorageFlag) {
 			return nil
 		}
-		errs := []error{
+		if Exists(LUNFile) {
+			if err := DetachLUN(); err != nil {
+				return err
+			}
+		}
+		return errors.Join(
 			RemoveIfExists(MassStorageLink),
 			RemoveIfExists(MassStorageFlag),
 			RemoveIfExists(MassStorageROFlag),
 			RemoveIfExists(MassStorageCDROMFlag),
-		}
-		if Exists(LUNFile) {
-			errs = append([]error{DetachLUN()}, errs...)
-		}
-		return errors.Join(errs...)
+		)
 	})
 }
 
@@ -193,15 +194,17 @@ func SetDataDiskEnabled(h HIDController, enabled bool) error {
 		if VirtualMediaEnabled() {
 			return RemoveIfExists(DataDiskFlag)
 		}
+		if Exists(DataDiskLUNFile) {
+			if err := ClearString(DataDiskLUNFile); err != nil {
+				return err
+			}
+		}
 		errs := []error{
 			RemoveIfExists(DataDiskLink),
 			RemoveIfExists(DataDiskFlag),
 		}
 		if image, ok := massStorageFlagImage(); ok && image == LegacyNoMediaImage {
 			errs = append(errs, removeMassStorageState())
-		}
-		if Exists(DataDiskLUNFile) {
-			errs = append([]error{ClearString(DataDiskLUNFile)}, errs...)
 		}
 		return errors.Join(errs...)
 	})

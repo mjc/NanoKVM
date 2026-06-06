@@ -380,6 +380,31 @@ func TestSetVirtualMediaEnabledDisablesPersistedCDROMState(t *testing.T) {
 	assertFile(t, LUNFile, "\n")
 }
 
+func TestSetVirtualMediaEnabledDisableFailurePreservesMediaState(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetLUNImage(hid, "/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(LUNFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNFile, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetVirtualMediaEnabled(hid, false); err == nil {
+		t.Fatal("SetVirtualMediaEnabled disable succeeded despite unwritable LUN file")
+	}
+
+	if !Exists(MassStorageFlag) {
+		t.Fatal("failed media disable removed media flag")
+	}
+	if !Exists(MassStorageLink) {
+		t.Fatal("failed media disable removed media link")
+	}
+}
+
 func TestVirtualMediaAndDataDiskAreMutuallyExclusive(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
@@ -703,6 +728,31 @@ func TestSetDataDiskEnabledDisablesCleanly(t *testing.T) {
 	}
 	if Exists(DataDiskLink) {
 		t.Fatal("data disk link still exists after disabling data disk")
+	}
+}
+
+func TestSetDataDiskEnabledDisableFailurePreservesDataDiskState(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetDataDiskEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(LUNFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(LUNFile, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetDataDiskEnabled(hid, false); err == nil {
+		t.Fatal("SetDataDiskEnabled disable succeeded despite unwritable LUN file")
+	}
+
+	if !Exists(DataDiskFlag) {
+		t.Fatal("failed data disk disable removed data disk flag")
+	}
+	if !Exists(DataDiskLink) {
+		t.Fatal("failed data disk disable removed data disk link")
 	}
 }
 
