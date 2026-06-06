@@ -322,6 +322,37 @@ func TestDataDiskUsesSharedMassStorageSlot(t *testing.T) {
 	}
 }
 
+func TestSetVirtualMediaEnabledEvictsDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+
+	if err := SetDataDiskEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if !DataDiskEnabled() {
+		t.Fatal("data disk did not report enabled before media toggle")
+	}
+
+	if err := SetVirtualMediaEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+
+	if Exists(DataDiskFlag) {
+		t.Fatal("virtual media enable left data disk boot flag behind")
+	}
+	if DataDiskEnabled() {
+		t.Fatal("data disk reported enabled after virtual media enable")
+	}
+	if !VirtualMediaEnabled() {
+		t.Fatal("virtual media did not report enabled after evicting data disk")
+	}
+	assertFile(t, MassStorageFlag, "")
+	assertFile(t, LUNFile, "\n")
+	assertFile(t, LUNRO, "0")
+	assertFile(t, LUNCDROM, "0")
+	assertContains(t, LUNInquiryString, massStorageInquiry)
+}
+
 func TestSetLUNImagePersistsBootMediaState(t *testing.T) {
 	withFakeGadget(t)
 
