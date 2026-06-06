@@ -118,6 +118,10 @@ kvmv_data_t kvmv_data_buffer[kvmv_data_buffer_size];
 uint8_t kvmv_data_buffer_index = 0;
 
 uint8_t debug_en = 0;
+static pthread_t vi_detection_thread;
+static pthread_t watchdog_thread;
+static uint8_t vi_detection_thread_created = 0;
+static uint8_t watchdog_thread_created = 0;
 void debug(const char *format, ...)
 {
     if(debug_en){
@@ -1024,6 +1028,7 @@ void* watchdog_sf_feed(void * arg)
             vision_update_watchdog();
         }
     }
+    return NULL;
 }
 
 void get_hdmi_version()
@@ -1287,8 +1292,9 @@ void* vi_subsystem_detection(void * arg)
         }
 
 		time::sleep_ms(10);
-    }
+	}
     kvmv_cfg.thread_is_running = 0;
+    return NULL;
 }
 
 int sync_vi_res()
@@ -1523,7 +1529,6 @@ int8_t raw_to_h264(image::Image *raw, kvmv_data_t* ret_stream, uint16_t _qlty)
 
 void kvmv_init(uint8_t _debug_info_en)
 {
-    pthread_t thread;
     pthread_mutex_init(&vi_mutex, NULL);
     if(_debug_info_en == 0) debug_en = 0;
     else                    debug_en = 1;
@@ -1543,14 +1548,20 @@ void kvmv_init(uint8_t _debug_info_en)
     if(kvmv_cfg.thread_is_running == 1){
         debug("[kvmv]thread is running!\r\n");
     } else {
-        if (0 != pthread_create(&thread, NULL, vi_subsystem_detection, NULL)) {
+        vi_detection_thread_created = 0;
+        watchdog_thread_created = 0;
+        if (0 != pthread_create(&vi_detection_thread, NULL, vi_subsystem_detection, NULL)) {
             debug("[kvmv]create vi_subsystem_detection thread failed!\r\n");
             // return -1;
+        } else {
+            vi_detection_thread_created = 1;
         }
 
-        if (0 != pthread_create(&thread, NULL, watchdog_sf_feed, NULL)) {
+        if (0 != pthread_create(&watchdog_thread, NULL, watchdog_sf_feed, NULL)) {
             debug("[kvmv]create watchdog_sf_feed thread failed!\r\n");
             // return -1;
+        } else {
+            watchdog_thread_created = 1;
         }
     }
     // debug("[kvmv]kvmv_init - 3\r\n");
@@ -1798,7 +1809,7 @@ int free_kvmv_data(uint8_t ** _pp_kvm_data)
 
 void free_all_kvmv_data()
 {
-    for(int i = 0; i <= kvmv_data_buffer_size; i++){
+    for(int i = 0; i < kvmv_data_buffer_size; i++){
         if(kvmv_data_buffer[i].p_img_data != NULL){
             free(kvmv_data_buffer[i].p_img_data);
             kvmv_data_buffer[i].p_img_data = NULL;
@@ -1808,8 +1819,17 @@ void free_all_kvmv_data()
 
 void kvmv_deinit()
 {
-    pthread_mutex_destroy(&vi_mutex);
     kvmv_cfg.try_exit_thread = 1;
+    if (vi_detection_thread_created) {
+        pthread_join(vi_detection_thread, NULL);
+        vi_detection_thread_created = 0;
+    }
+    if (watchdog_thread_created) {
+        pthread_join(watchdog_thread, NULL);
+        watchdog_thread_created = 0;
+    }
+    kvmv_cfg.thread_is_running = 0;
+    pthread_mutex_destroy(&vi_mutex);
     cam->close();
     mmf_deinit();
     free_all_kvmv_data();
