@@ -30,11 +30,17 @@ start_usb_dev(){
         add_hid_functions "${USB_HID_REPORT_NORMAL_KEYBOARD}" "${USB_HID_REPORT_NORMAL_ABSOLUTE_MOUSE}"
     fi
 
+    media_disk=''
     if [ -e "${USB_BOOT_DIR}/usb.media0" ]
+    then
+        media_disk=$(cat "${USB_BOOT_DIR}/usb.media0")
+    fi
+
+    if [ -e "${USB_BOOT_DIR}/usb.media0" ] && { [ "${media_disk}" != "${USB_DATA_DISK_BACKING}" ] || [ ! -e "${USB_BOOT_DIR}/usb.disk0" ]; }
     then
         mkdir "functions/${USB_MASS_STORAGE_FUNC}"
         echo 1 > "functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable"
-        disk=$(cat "${USB_BOOT_DIR}/usb.media0")
+        disk="${media_disk}"
         media_ro=0
         media_cdrom=0
         media_inquiry="${USB_MASS_STORAGE_INQUIRY}"
