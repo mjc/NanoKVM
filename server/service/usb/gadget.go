@@ -254,18 +254,17 @@ func SetLUNImage(h HIDController, image string, cdrom bool) error {
 		if image == "" && DataDiskEnabled() {
 			return nil
 		}
-		if err := EnsureFile(MassStorageFlag); err != nil {
-			return err
-		}
 		if err := ensureMassStorageLink(); err != nil {
 			return err
 		}
 
+		if err := setMassStorageLUNMode(image, cdrom); err != nil {
+			return err
+		}
 		if err := DetachLUN(); err != nil {
 			return err
 		}
-
-		if err := setMassStorageLUN(image, cdrom); err != nil {
+		if err := attachMassStorageImage(image); err != nil {
 			return err
 		}
 		return errors.Join(
@@ -365,6 +364,13 @@ func lunInquiry(product string) string {
 }
 
 func setMassStorageLUN(image string, cdrom bool) error {
+	if err := setMassStorageLUNMode(image, cdrom); err != nil {
+		return err
+	}
+	return attachMassStorageImage(image)
+}
+
+func setMassStorageLUNMode(image string, cdrom bool) error {
 	flag := "0"
 	inquiryProduct := massStorageInquiry
 	if image != "" && cdrom {
@@ -381,6 +387,10 @@ func setMassStorageLUN(image string, cdrom bool) error {
 	if err := WriteString(LUNInquiryString, lunInquiry(inquiryProduct)); err != nil {
 		return fmt.Errorf("set inquiry string: %w", err)
 	}
+	return nil
+}
+
+func attachMassStorageImage(image string) error {
 	if image == "" {
 		return nil
 	}
