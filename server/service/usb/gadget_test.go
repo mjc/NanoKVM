@@ -353,6 +353,37 @@ func TestSetVirtualMediaEnabledEvictsDataDisk(t *testing.T) {
 	assertContains(t, LUNInquiryString, massStorageInquiry)
 }
 
+func TestSetDataDiskEnabledEvictsEmptyVirtualMedia(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+
+	if err := SetVirtualMediaEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if !VirtualMediaEnabled() {
+		t.Fatal("virtual media did not report enabled before data disk toggle")
+	}
+
+	if err := SetDataDiskEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+
+	if Exists(MassStorageFlag) || Exists(MassStorageROFlag) || Exists(MassStorageCDROMFlag) {
+		t.Fatal("data disk enable left empty virtual media boot state behind")
+	}
+	if VirtualMediaEnabled() {
+		t.Fatal("virtual media reported enabled after data disk enable")
+	}
+	if !DataDiskEnabled() {
+		t.Fatal("data disk did not report enabled after evicting virtual media")
+	}
+	assertFile(t, DataDiskFlag, "")
+	assertFile(t, LUNFile, LegacyNoMediaImage)
+	assertFile(t, LUNRO, "0")
+	assertFile(t, LUNCDROM, "0")
+	assertContains(t, LUNInquiryString, dataDiskInquiry)
+}
+
 func TestSetLUNImagePersistsBootMediaState(t *testing.T) {
 	withFakeGadget(t)
 
