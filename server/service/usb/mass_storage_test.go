@@ -1,6 +1,7 @@
 package usb
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -184,6 +185,34 @@ func TestLegacyNoMediaImageIsHiddenFromMountedImage(t *testing.T) {
 	}
 }
 
+func TestNormalizeImage(t *testing.T) {
+	tests := []struct {
+		name  string
+		image string
+		want  string
+	}{
+		{name: "trims whitespace", image: " /data/installer.iso \n", want: "/data/installer.iso"},
+		{name: "hides legacy data disk backing", image: LegacyNoMediaImage, want: ""},
+		{name: "trims then hides legacy backing", image: "  " + LegacyNoMediaImage + "  ", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeImage(tt.image); got != tt.want {
+				t.Fatalf("NormalizeImage(%q) = %q, want %q", tt.image, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLUNInquiryFormatting(t *testing.T) {
+	got := lunInquiry(cdromInquiry)
+	want := "NanoKVM USB CD/DVD-ROM  0520"
+	if got != want {
+		t.Fatalf("lunInquiry() = %q, want %q", got, want)
+	}
+}
+
 func TestMountedImageIgnoresStaleDataDiskImageState(t *testing.T) {
 	withFakeGadget(t)
 	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
@@ -198,6 +227,39 @@ func TestMountedImageIgnoresStaleDataDiskImageState(t *testing.T) {
 	}
 	if image != "" {
 		t.Fatalf("mounted image for data disk = %q, want empty", image)
+	}
+}
+
+func TestActiveMediaBootStateRequiresLinkedNonEmptyMedia(t *testing.T) {
+	tests := []struct {
+		name      string
+		link      bool
+		mediaFlag *string
+		want      bool
+	}{
+		{name: "unlinked media", mediaFlag: stringPtr("/data/installer.iso")},
+		{name: "linked empty media", link: true, mediaFlag: stringPtr("")},
+		{name: "linked media image", link: true, mediaFlag: stringPtr("/data/installer.iso"), want: true},
+		{name: "linked without media flag", link: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withFakeGadget(t)
+			if tt.link {
+				if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.mediaFlag != nil {
+				writeFile(t, MassStorageFlag, *tt.mediaFlag)
+			}
+
+			_, got := activeMediaBootState()
+			if got != tt.want {
+				t.Fatalf("activeMediaBootState() active = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -1053,6 +1115,99 @@ func TestSetDataDiskEnabledDisablesLegacyMediaBackedDataDisk(t *testing.T) {
 	assertFile(t, LUNFile, "\n")
 }
 
+func TestDisableMassStorageOwner(t *testing.T) {
+	tests := []struct {
+		name           string
+		owner          massStorageOwner
+		setup          func(t *testing.T)
+		wantLink       bool
+		wantMediaFlag  *string
+		wantDataDisk   bool
+		wantLUN        string
+		wantForcedEmit bool
+	}{
+		{
+			name:  "media",
+			owner: massStorageOwnerMedia,
+			setup: func(t *testing.T) {
+				if err := SetLUNImage(&fakeHID{}, "/data/installer.iso", true); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, LUNForcedEject, "")
+			},
+			wantLUN:        "\n",
+			wantForcedEmit: true,
+		},
+		{
+			name:  "data disk",
+			owner: massStorageOwnerDataDisk,
+			setup: func(t *testing.T) {
+				if err := SetDataDiskEnabled(&fakeHID{}, true); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantLUN: "\n",
+		},
+		{
+			name:  "legacy-backed data disk",
+			owner: massStorageOwnerDataDisk,
+			setup: func(t *testing.T) {
+				if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, MassStorageFlag, LegacyNoMediaImage)
+				writeFile(t, DataDiskFlag, "")
+				writeFile(t, LUNFile, LegacyNoMediaImage)
+			},
+			wantLUN: "\n",
+		},
+		{
+			name:  "inactive data disk leaves media",
+			owner: massStorageOwnerDataDisk,
+			setup: func(t *testing.T) {
+				if err := SetLUNImage(&fakeHID{}, "/data/installer.iso", true); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, DataDiskFlag, "")
+			},
+			wantLink:      true,
+			wantMediaFlag: stringPtr("/data/installer.iso"),
+			wantLUN:       "/data/installer.iso",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withFakeGadget(t)
+			tt.setup(t)
+
+			if err := disableMassStorageOwner(tt.owner); err != nil {
+				t.Fatal(err)
+			}
+
+			if got := Exists(MassStorageLink); got != tt.wantLink {
+				t.Fatalf("mass storage link exists = %v, want %v", got, tt.wantLink)
+			}
+			if tt.wantMediaFlag == nil {
+				if Exists(MassStorageFlag) {
+					t.Fatal("media flag exists")
+				}
+			} else {
+				assertFile(t, MassStorageFlag, *tt.wantMediaFlag)
+			}
+			if got := Exists(DataDiskFlag); got != tt.wantDataDisk {
+				t.Fatalf("data disk flag exists = %v, want %v", got, tt.wantDataDisk)
+			}
+			if tt.wantLUN != "" {
+				assertFile(t, LUNFile, tt.wantLUN)
+			}
+			if tt.wantForcedEmit {
+				assertFile(t, LUNForcedEject, "1")
+			}
+		})
+	}
+}
+
 func TestCDROMFlagTreatsOnlyOneAsEnabled(t *testing.T) {
 	withFakeGadget(t)
 	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
@@ -1405,4 +1560,41 @@ func TestWriteMassStorageBootState(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWriteMassStorageBootStateFailurePreservesOldOwner(t *testing.T) {
+	t.Run("media write failure preserves data disk", func(t *testing.T) {
+		withFakeGadget(t)
+		writeFile(t, DataDiskFlag, "")
+		if err := os.Mkdir(MassStorageFlag, 0o777); err != nil {
+			t.Fatal(err)
+		}
+
+		err := writeMassStorageBootState(mediaBootState("/data/installer.iso", true))
+		if err == nil {
+			t.Fatal("writeMassStorageBootState succeeded despite unwritable media flag")
+		}
+		if !Exists(DataDiskFlag) {
+			t.Fatal("failed media state write removed existing data disk flag")
+		}
+	})
+
+	t.Run("data disk write failure preserves media", func(t *testing.T) {
+		withFakeGadget(t)
+		writeFile(t, MassStorageFlag, "/data/installer.iso")
+		if err := os.Remove(DataDiskFlag); err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(DataDiskFlag, 0o777); err != nil {
+			t.Fatal(err)
+		}
+
+		err := writeMassStorageBootState(dataDiskBootState())
+		if err == nil {
+			t.Fatal("writeMassStorageBootState succeeded despite unwritable data disk flag")
+		}
+		if !Exists(MassStorageFlag) {
+			t.Fatal("failed data disk state write removed existing media flag")
+		}
+	})
 }
