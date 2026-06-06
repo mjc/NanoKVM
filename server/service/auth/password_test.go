@@ -192,6 +192,92 @@ func TestChangePasswordDoesNotRevokeTokensWhenRootPasswordChangeFails(t *testing
 	}
 }
 
+func TestChangePasswordRejectsUnsafePasswordsBeforeMutatingAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		name     string
+		password string
+	}{
+		{name: "default appliance password", password: "admin"},
+		{name: "username as password", password: "mjc"},
+		{name: "common password", password: "password"},
+		{name: "common password with year", password: "Password2026"},
+		{name: "common password with punctuation", password: "Password2026!"},
+		{name: "common phrase", password: "letmeinletmein"},
+		{name: "admin phrase", password: "adminadminadmin"},
+		{name: "vendor name", password: "nanokvmnanokvm"},
+		{name: "device name with punctuation", password: "NanoKVM-Server!"},
+		{name: "short eight chars", password: "Abcdef1!"},
+		{name: "short fourteen chars", password: "Abcdefghijk1!"},
+		{name: "all lowercase letters", password: "abcdefghijklmno"},
+		{name: "all uppercase letters", password: "ABCDEFGHIJKLMNO"},
+		{name: "all digits", password: "123456789012345"},
+		{name: "all punctuation", password: "!@#$%^&*()_+-={}"},
+		{name: "repeated character", password: "aaaaaaaaaaaaaaa"},
+		{name: "repeated character with suffix", password: "aaaaaaaaaaaaaa1!"},
+		{name: "ascending sequence", password: "abcdefghijklmnop"},
+		{name: "descending sequence", password: "ponmlkjihgfedcba"},
+		{name: "keyboard sequence", password: "qwertyuiopasdfg"},
+		{name: "numeric sequence", password: "0123456789012345"},
+		{name: "leading newline", password: "\npassword-with-newline"},
+		{name: "embedded newline", password: "password\nwith-newline"},
+		{name: "tab character", password: "password\twith-tab"},
+		{name: "null byte", password: "password\x00with-null"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assertPasswordChangeRejectedBeforeMutation(t, proto.ChangePasswordReq{
+				Username: "mjc",
+				Password: encryptedPassword(tt.password),
+			})
+		})
+	}
+}
+
+func TestChangePasswordRejectsUnsafeUsernamesBeforeMutatingAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, username := range []string{
+		"root",
+		"admin ",
+		" admin",
+		"Admin",
+		"admin\n",
+		"admin@example.com",
+		"../../etc/passwd",
+		"<script>alert(1)</script>",
+	} {
+		t.Run(username, func(t *testing.T) {
+			assertPasswordChangeRejectedBeforeMutation(t, proto.ChangePasswordReq{
+				Username: username,
+				Password: encryptedPassword("long-random-passphrase-2026!"),
+			})
+		})
+	}
+}
+
+func TestChangePasswordRejectsBcryptTruncationBoundaryBeforeHashing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		name     string
+		password string
+	}{
+		{name: "seventy three ascii bytes", password: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{name: "shared first seventy two bytes", password: "same-prefix-same-prefix-same-prefix-same-prefix-same-prefix-same-prefix-1"},
+		{name: "same first seventy two bytes but different suffix", password: "same-prefix-same-prefix-same-prefix-same-prefix-same-prefix-same-prefix-2"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w := changePasswordRequest(t, proto.ChangePasswordReq{
+				Username: "admin",
+				Password: encryptedPassword(tt.password),
+			})
+
+			assertAuthResponse(t, w, -2, "invalid password")
+		})
+	}
+}
+
 func TestIsDefaultPasswordChanged(t *testing.T) {
 	bcryptAdmin := hashPassword(t, "admin")
 	bcryptChanged := hashPassword(t, "changed-password")
@@ -263,6 +349,32 @@ func changePasswordRequest(t *testing.T, payload proto.ChangePasswordReq) *httpt
 	router.ServeHTTP(w, req)
 
 	return w
+}
+
+func assertPasswordChangeRejectedBeforeMutation(t *testing.T, payload proto.ChangePasswordReq) {
+	t.Helper()
+
+	setPasswordChangeHooks(t, passwordChangeHooks{
+		setAccount: func(username string, hashedPassword string) error {
+			t.Fatalf("setAccount should not be called for unsafe password changes, username=%q", username)
+			return nil
+		},
+		changeRootPassword: func(password string) error {
+			t.Fatal("changeRootPassword should not be called for unsafe password changes")
+			return nil
+		},
+		delAccount: func() error {
+			t.Fatal("delAccount should not be called for unsafe password changes")
+			return nil
+		},
+		revokeTokens: func() {
+			t.Fatal("tokens should not be revoked for unsafe password changes")
+		},
+	})
+
+	w := changePasswordRequest(t, payload)
+
+	assertAuthResponse(t, w, -2, "invalid password")
 }
 
 func encryptedPassword(password string) string {
