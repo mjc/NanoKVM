@@ -52,8 +52,12 @@ func (s *Service) Update(c *gin.Context) {
 }
 
 func update() error {
-	_ = removeAll(cacheDir)
-	_ = mkdirAll(cacheDir, 0o755)
+	if err := removeAll(cacheDir); err != nil {
+		return fmt.Errorf("failed to clear cache: %w", err)
+	}
+	if err := mkdirAll(cacheDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create cache: %w", err)
+	}
 	defer func() {
 		_ = removeAll(cacheDir)
 	}()
@@ -62,6 +66,9 @@ func update() error {
 	latest, err := getLatest()
 	if err != nil {
 		return err
+	}
+	if err := validateFilename(latest.Name); err != nil {
+		return fmt.Errorf("invalid latest name: %w", err)
 	}
 
 	// download

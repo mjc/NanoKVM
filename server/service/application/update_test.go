@@ -225,6 +225,34 @@ func responseCode(t *testing.T, w *httptest.ResponseRecorder) int {
 	return body.Code
 }
 
+func captureRestartCommand(calls *int, command *string, args *[]string) func(string, ...string) *exec.Cmd {
+	return func(name string, commandArgs ...string) *exec.Cmd {
+		*calls++
+		*command = name
+		*args = append((*args)[:0], commandArgs...)
+		return exec.Command("true")
+	}
+}
+
+func restartCommandWasExact(command string, args []string) bool {
+	return command == "sh" &&
+		len(args) == 2 &&
+		args[0] == "-c" &&
+		args[1] == "/etc/init.d/S95nanokvm restart"
+}
+
+func nonEmptyDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func TestNewService(t *testing.T) {
 	if NewService() == nil {
 		t.Fatal("NewService returned nil")
@@ -280,16 +308,16 @@ func TestUpdateHandlerSuccessProperty(t *testing.T) {
 		stableURL = server.URL
 
 		restarts := 0
-		restartCommand = func(string, ...string) *exec.Cmd {
-			restarts++
-			return exec.Command("true")
-		}
+		var restartName string
+		var restartArgs []string
+		restartCommand = captureRestartCommand(&restarts, &restartName, &restartArgs)
 
 		c, w := responseRecorder(http.MethodPost, "/update", nil, "")
 		NewService().Update(c)
 
 		return responseCode(t, w) == 0 &&
 			restarts == 1 &&
+			restartCommandWasExact(restartName, restartArgs) &&
 			strings.TrimSpace(string(mustReadFile(t, filepath.Join(appDir, "version")))) == string(newVersion) &&
 			strings.TrimSpace(string(mustReadFile(t, filepath.Join(backupDir, "version")))) == string(oldVersion) &&
 			pathIsMissing(cacheDir)
@@ -346,6 +374,65 @@ func TestUpdateDownloadChecksumAndInstallFailures(t *testing.T) {
 	httpGet = latestResponder(t, &Latest{Name: "app.tar.gz", Sha512: sha512Base64(pkg)})
 	if err := update(); err == nil || !strings.Contains(err.Error(), "failed to decompress") {
 		t.Fatalf("expected install failure, got %v", err)
+	}
+}
+
+func TestUpdateCacheSetupFailures(t *testing.T) {
+	t.Run("clear", func(t *testing.T) {
+		resetApplicationTestState(t)
+
+		latestCalled := false
+		httpGet = func(string) (*http.Response, error) {
+			latestCalled = true
+			return nil, errors.New("latest should not be requested")
+		}
+		removeAll = func(string) error {
+			return errors.New("clear cache failed")
+		}
+		if err := update(); err == nil || !strings.Contains(err.Error(), "clear cache failed") {
+			t.Fatalf("expected clear cache failure, got %v", err)
+		}
+		if latestCalled {
+			t.Fatal("latest was requested after cache clear failed")
+		}
+	})
+
+	t.Run("create", func(t *testing.T) {
+		resetApplicationTestState(t)
+
+		latestCalled := false
+		httpGet = func(string) (*http.Response, error) {
+			latestCalled = true
+			return nil, errors.New("latest should not be requested")
+		}
+		mkdirAll = func(string, os.FileMode) error {
+			return errors.New("create cache failed")
+		}
+		if err := update(); err == nil || !strings.Contains(err.Error(), "create cache failed") {
+			t.Fatalf("expected create cache failure, got %v", err)
+		}
+		if latestCalled {
+			t.Fatal("latest was requested after cache create failed")
+		}
+	})
+}
+
+func TestUpdateRejectsUnsafeLatestName(t *testing.T) {
+	resetApplicationTestState(t)
+
+	httpGet = latestResponder(t, &Latest{Name: "../pkg.tar.gz", Sha512: "unused"})
+	downloadCalled := false
+	downloadRequest = func(*http.Request, string) error {
+		downloadCalled = true
+		return errors.New("download should not start")
+	}
+
+	err := update()
+	if err == nil || !strings.Contains(err.Error(), "path detected") {
+		t.Fatalf("expected unsafe latest name failure, got %v", err)
+	}
+	if downloadCalled {
+		t.Fatal("download started for unsafe latest name")
 	}
 }
 
@@ -516,16 +603,16 @@ func TestOfflineUpdateSuccessProperty(t *testing.T) {
 		}
 
 		restarts := 0
-		restartCommand = func(string, ...string) *exec.Cmd {
-			restarts++
-			return exec.Command("true")
-		}
+		var restartName string
+		var restartArgs []string
+		restartCommand = captureRestartCommand(&restarts, &restartName, &restartArgs)
 		c, w := responseRecorder(http.MethodPost, "/offline", &body, mw.FormDataContentType())
 		c.Request.ContentLength = int64(body.Len())
 		NewService().OfflineUpdate(c)
 
 		return responseCode(t, w) == 0 &&
 			restarts == 1 &&
+			restartCommandWasExact(restartName, restartArgs) &&
 			strings.TrimSpace(string(mustReadFile(t, filepath.Join(appDir, "version")))) == string(newVersion) &&
 			strings.TrimSpace(string(mustReadFile(t, filepath.Join(backupDir, "version")))) == string(oldVersion) &&
 			pathIsMissing(sentinelFilePath)
@@ -622,6 +709,38 @@ func TestOfflineUpdateFailures(t *testing.T) {
 	if err := offlineUpdate(c); err == nil || !strings.Contains(err.Error(), "failed to decompress") {
 		t.Fatalf("expected offline install error, got %v", err)
 	}
+}
+
+func TestOfflineUpdateCacheSetupFailures(t *testing.T) {
+	t.Run("clear", func(t *testing.T) {
+		resetApplicationTestState(t)
+
+		writeFile = func(string, []byte, os.FileMode) error {
+			return errors.New("sentinel should not be created")
+		}
+		removeAll = func(string) error {
+			return errors.New("clear cache failed")
+		}
+		c, _ := responseRecorder(http.MethodPost, "/offline", strings.NewReader(""), "multipart/form-data")
+		if err := offlineUpdate(c); err == nil || !strings.Contains(err.Error(), "clear cache failed") {
+			t.Fatalf("expected clear cache failure, got %v", err)
+		}
+	})
+
+	t.Run("create", func(t *testing.T) {
+		resetApplicationTestState(t)
+
+		writeFile = func(string, []byte, os.FileMode) error {
+			return errors.New("sentinel should not be created")
+		}
+		mkdirAll = func(string, os.FileMode) error {
+			return errors.New("create cache failed")
+		}
+		c, _ := responseRecorder(http.MethodPost, "/offline", strings.NewReader(""), "multipart/form-data")
+		if err := offlineUpdate(c); err == nil || !strings.Contains(err.Error(), "create cache failed") {
+			t.Fatalf("expected create cache failure, got %v", err)
+		}
+	})
 }
 
 func TestProcessUploadAndSaveFailures(t *testing.T) {
@@ -876,10 +995,12 @@ func TestGetLatest(t *testing.T) {
 		if preview {
 			baseURL = previewURL
 		}
+		cacheBuster := strings.TrimPrefix(requested, baseURL+"/latest.json?now=")
 		return latest.Version == string(version) &&
 			latest.Name == string(filename) &&
 			latest.Url == baseURL+"/"+string(filename) &&
-			strings.HasPrefix(requested, baseURL+"/latest.json?now=")
+			strings.HasPrefix(requested, baseURL+"/latest.json?now=") &&
+			nonEmptyDigits(cacheBuster)
 	}
 
 	if err := quick.Check(prop, appQuickConfig); err != nil {
