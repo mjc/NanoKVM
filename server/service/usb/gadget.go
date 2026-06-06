@@ -183,13 +183,7 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 func SetDataDiskEnabled(h HIDController, enabled bool) error {
 	return WithDetachedUDC(h, func() error {
 		if enabled {
-			if err := ensureDataDiskFunction(); err != nil {
-				return err
-			}
-			if err := WriteString(DataDiskLUNFile, LegacyNoMediaImage); err != nil {
-				return err
-			}
-			if err := ensureDataDiskLink(); err != nil {
+			if err := prepareDataDiskLUN(); err != nil {
 				return err
 			}
 			return errors.Join(
@@ -510,10 +504,17 @@ func ensureDataDiskFunction() error {
 	return nil
 }
 
-func ensureDataDiskLink() error {
+func prepareDataDiskLUN() error {
 	if err := ensureDataDiskFunction(); err != nil {
 		return err
 	}
+	if err := WriteString(DataDiskLUNFile, LegacyNoMediaImage); err != nil {
+		return err
+	}
+	return linkDataDiskFunction()
+}
+
+func linkDataDiskFunction() error {
 	if !Exists(DataDiskLink) {
 		return os.Symlink(DataDiskFunction, DataDiskLink)
 	}
