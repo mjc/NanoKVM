@@ -484,6 +484,28 @@ func TestSetDataDiskEnabledDisablesCleanly(t *testing.T) {
 	}
 }
 
+func TestSetDataDiskEnabledDisablesLegacyMediaBackedDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, MassStorageFlag, LegacyNoMediaImage)
+	writeFile(t, DataDiskFlag, "")
+	writeFile(t, LUNFile, LegacyNoMediaImage)
+
+	if err := SetDataDiskEnabled(&fakeHID{}, false); err != nil {
+		t.Fatal(err)
+	}
+
+	if Exists(DataDiskFlag) {
+		t.Fatal("data disk flag still exists after disabling legacy-backed data disk")
+	}
+	if Exists(MassStorageLink) {
+		t.Fatal("shared mass-storage link still exists after disabling legacy-backed data disk")
+	}
+	assertFile(t, LUNFile, "\n")
+}
+
 func TestCDROMFlagTreatsOnlyOneAsEnabled(t *testing.T) {
 	withFakeGadget(t)
 
