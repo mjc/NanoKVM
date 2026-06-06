@@ -71,6 +71,11 @@ func WithDetachedUDC(h HIDController, mutate func() error) error {
 	defer h.Unlock()
 
 	detachErr := DetachUDC()
+	if detachErr != nil {
+		openErr := h.OpenNoLockWithRetry(hidReopenTimeout, hidReopenDelay)
+		return errors.Join(detachErr, openErr)
+	}
+
 	mutateErr := mutate()
 	attachErr := AttachUDC()
 	openErr := h.OpenNoLockWithRetry(hidReopenTimeout, hidReopenDelay)
