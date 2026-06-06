@@ -153,6 +153,9 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 			return setMassStorageLUN("", false)
 		}
 
+		if !Exists(MassStorageFlag) {
+			return nil
+		}
 		errs := []error{
 			RemoveIfExists(MassStorageLink),
 			RemoveIfExists(MassStorageFlag),
@@ -181,6 +184,12 @@ func SetDataDiskEnabled(h HIDController, enabled bool) error {
 			return WriteString(DataDiskLUNFile, LegacyNoMediaImage)
 		}
 
+		if !Exists(DataDiskFlag) {
+			return nil
+		}
+		if Exists(MassStorageFlag) {
+			return RemoveIfExists(DataDiskFlag)
+		}
 		errs := []error{
 			RemoveIfExists(DataDiskLink),
 			RemoveIfExists(DataDiskFlag),
