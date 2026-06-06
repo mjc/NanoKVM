@@ -147,7 +147,7 @@ func (s *Service) DeleteScript(c *gin.Context) {
 	}
 
 	if err := os.Remove(target); err != nil {
-		log.Errorf("delete script %s failed: %s", target, err)
+		log.Errorf("delete script %s failed: %s", filename, err)
 		rsp.ErrRsp(c, -3, "delete failed")
 		return
 	}
@@ -167,7 +167,7 @@ func isScript(name string) bool {
 
 func resolveScriptPath(name string) (string, string, error) {
 	filename := strings.TrimSpace(name)
-	if filename == "" {
+	if filename == "" || filename != name {
 		return "", "", fmt.Errorf("empty script name")
 	}
 
