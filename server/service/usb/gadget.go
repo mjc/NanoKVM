@@ -238,6 +238,9 @@ func RNDISEnabled() bool {
 func SetLUNImage(h HIDController, image string, cdrom bool) error {
 	image = NormalizeImage(image)
 	return WithDetachedUDC(h, func() error {
+		if image == "" && !Exists(MassStorageFlag) && Exists(DataDiskFlag) {
+			return nil
+		}
 		if err := EnsureFile(MassStorageFlag); err != nil {
 			return err
 		}
