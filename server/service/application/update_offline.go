@@ -147,6 +147,10 @@ func saveUploadedFile(part *multipart.Part, contentLength int64) (string, error)
 
 func validateFilename(filename string) error {
 	baseName := filepath.Base(filename)
+	if baseName == "." {
+		log.Warnf("Reserved filename: %s", filename)
+		return fmt.Errorf("reserved filename")
+	}
 
 	// Check if the path contains directory components
 	if baseName != filename {

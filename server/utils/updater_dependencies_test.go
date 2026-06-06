@@ -138,13 +138,13 @@ func TestDownloadFailures(t *testing.T) {
 	if err := os.WriteFile(parentFile, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	assertErrContains(t, Download(req, filepath.Join(parentFile, "target")), "")
+	assertErrContains(t, Download(req, filepath.Join(parentFile, "target")), "not a directory")
 
 	targetDir := filepath.Join(t.TempDir(), "target")
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	assertErrContains(t, Download(req, targetDir), "")
+	assertErrContains(t, Download(req, targetDir), "is a directory")
 }
 
 func TestUnTarGzProperties(t *testing.T) {
@@ -197,14 +197,14 @@ func TestUnTarGzFailures(t *testing.T) {
 	if err := os.WriteFile(parentFile, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	assertUntarFails(t, validArchive, filepath.Join(parentFile, "dest"), "")
-	assertUntarFails(t, filepath.Join(tmp, "missing.tar.gz"), filepath.Join(tmp, "missing-dest"), "")
+	assertUntarFails(t, validArchive, filepath.Join(parentFile, "dest"), "not a directory")
+	assertErrIsNotExist(t, untarErr(filepath.Join(tmp, "missing.tar.gz"), filepath.Join(tmp, "missing-dest")))
 
 	plain := filepath.Join(tmp, "plain.tar.gz")
 	if err := os.WriteFile(plain, []byte("not gzip"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	assertUntarFails(t, plain, filepath.Join(tmp, "plain-dest"), "")
+	assertUntarFails(t, plain, filepath.Join(tmp, "plain-dest"), "unexpected EOF")
 
 	truncatedTar := filepath.Join(tmp, "truncated.tar.gz")
 	var buf bytes.Buffer
@@ -218,17 +218,19 @@ func TestUnTarGzFailures(t *testing.T) {
 	if err := os.WriteFile(truncatedTar, buf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	assertUntarFails(t, truncatedTar, filepath.Join(tmp, "truncated-dest"), "")
+	assertUntarFails(t, truncatedTar, filepath.Join(tmp, "truncated-dest"), "unexpected EOF")
 
 	for _, tc := range []struct {
 		name    string
 		entries []tarEntry
+		want    string
 	}{
 		{
 			name: "missing-parent",
 			entries: []tarEntry{
 				{name: "latest/missing/file", body: []byte("x"), mode: 0o644, typeflag: tar.TypeReg},
 			},
+			want: "no such file or directory",
 		},
 		{
 			name: "dir-conflict",
@@ -237,6 +239,7 @@ func TestUnTarGzFailures(t *testing.T) {
 				{name: "latest/conflict", body: []byte("file"), mode: 0o644, typeflag: tar.TypeReg},
 				{name: "latest/conflict/", mode: 0o755, typeflag: tar.TypeDir},
 			},
+			want: "not a directory",
 		},
 		{
 			name: "symlink-conflict",
@@ -245,18 +248,19 @@ func TestUnTarGzFailures(t *testing.T) {
 				{name: "latest/link", body: []byte("file"), mode: 0o644, typeflag: tar.TypeReg},
 				{name: "latest/link", linkname: "target", mode: 0o777, typeflag: tar.TypeSymlink},
 			},
+			want: "file exists",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			archive := filepath.Join(tmp, tc.name+".tar.gz")
 			writeTarGz(t, archive, tc.entries)
-			assertUntarFails(t, archive, filepath.Join(tmp, tc.name+"-dest"), "")
+			assertUntarFails(t, archive, filepath.Join(tmp, tc.name+"-dest"), tc.want)
 		})
 	}
 
 	shortFile := filepath.Join(tmp, "short-file.tar.gz")
 	writeShortFileTarGz(t, shortFile)
-	assertUntarFails(t, shortFile, filepath.Join(tmp, "short-file-dest"), "")
+	assertUntarFails(t, shortFile, filepath.Join(tmp, "short-file-dest"), "no such file or directory")
 
 	copyFailure := filepath.Join(tmp, "copy-failure.tar.gz")
 	writeTarGz(t, copyFailure, []tarEntry{
@@ -340,7 +344,7 @@ func TestMoveProperties(t *testing.T) {
 func TestMoveFailures(t *testing.T) {
 	tmp := t.TempDir()
 
-	assertErrContains(t, MoveFile(filepath.Join(tmp, "missing"), filepath.Join(tmp, "dst")), "")
+	assertErrIsNotExist(t, MoveFile(filepath.Join(tmp, "missing"), filepath.Join(tmp, "dst")))
 
 	parentFile := filepath.Join(tmp, "parent-file")
 	if err := os.WriteFile(parentFile, []byte("x"), 0o644); err != nil {
@@ -350,9 +354,9 @@ func TestMoveFailures(t *testing.T) {
 	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	assertErrContains(t, MoveFile(src, filepath.Join(parentFile, "dst")), "")
+	assertErrContains(t, MoveFile(src, filepath.Join(parentFile, "dst")), "not a directory")
 
-	assertErrContains(t, MoveFileCrossFS(filepath.Join(tmp, "missing-cross"), filepath.Join(tmp, "x")), "")
+	assertErrIsNotExist(t, MoveFileCrossFS(filepath.Join(tmp, "missing-cross"), filepath.Join(tmp, "x")))
 
 	noTmpParent := filepath.Join(tmp, "no-tmp-parent")
 	if err := os.WriteFile(noTmpParent, []byte("x"), 0o644); err != nil {
@@ -361,9 +365,9 @@ func TestMoveFailures(t *testing.T) {
 	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	assertErrContains(t, MoveFileCrossFS(src, filepath.Join(noTmpParent, "dst")), "")
+	assertErrContains(t, MoveFileCrossFS(src, filepath.Join(noTmpParent, "dst")), "not a directory")
 
-	assertErrContains(t, MoveFilesRecursively(filepath.Join(tmp, "missing-tree"), filepath.Join(tmp, "nope")), "")
+	assertErrIsNotExist(t, MoveFilesRecursively(filepath.Join(tmp, "missing-tree"), filepath.Join(tmp, "nope")))
 }
 
 func TestMoveInjectedFailures(t *testing.T) {
@@ -508,8 +512,8 @@ func TestChmodRecursivelyFailures(t *testing.T) {
 	if err := os.Symlink(filepath.Join(tmp, "missing-target"), link); err != nil {
 		t.Fatal(err)
 	}
-	assertErrContains(t, ChmodRecursively(link, 0o755), "")
-	assertErrContains(t, ChmodRecursively(filepath.Join(tmp, "missing"), 0o755), "")
+	assertErrIsNotExist(t, ChmodRecursively(link, 0o755))
+	assertErrIsNotExist(t, ChmodRecursively(filepath.Join(tmp, "missing"), 0o755))
 }
 
 func withUntarCopy(t *testing.T, copyFunc func(io.Writer, io.Reader) (int64, error)) {
@@ -524,8 +528,22 @@ func withUntarCopy(t *testing.T, copyFunc func(io.Writer, io.Reader) (int64, err
 
 func assertUntarFails(t *testing.T, src, dst, want string) {
 	t.Helper()
+	assertErrContains(t, untarErr(src, dst), want)
+}
+
+func untarErr(src, dst string) error {
 	_, err := UnTarGz(src, dst)
-	assertErrContains(t, err, want)
+	return err
+}
+
+func assertErrIsNotExist(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !os.IsNotExist(err) {
+		t.Fatalf("expected not-exist error, got %v", err)
+	}
 }
 
 func assertErrContains(t *testing.T, err error, want string) {

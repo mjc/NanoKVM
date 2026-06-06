@@ -630,7 +630,7 @@ func TestProcessUploadAndSaveFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, filename := range []string{"../bad.tar.gz", "..bad", "bad name.tar.gz"} {
+	for _, filename := range []string{"../bad.tar.gz", "..bad", "bad name.tar.gz", "."} {
 		if err := validateFilename(filename); err == nil {
 			t.Fatalf("filename %q unexpectedly valid", filename)
 		}
