@@ -439,6 +439,19 @@ test_normal_mounted_image_and_network(){
     assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Mass Storage" "mounted image inquiry"
 }
 
+test_normal_trims_mounted_media_image(){
+    base=$(new_env)
+    printf '  %s  \n' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
+    touch "${base}/boot/usb.media0.ro"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_text_bytes "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file" "${USB_TEST_IMAGE}"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "1" "trimmed media ro flag"
+    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "trimmed media cdrom flag"
+    assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Mass Storage" "trimmed media inquiry"
+}
+
 test_normal_mounted_cdrom_image_and_network(){
     base=$(new_env)
     printf '%s' "${USB_TEST_IMAGE}" > "${base}/boot/usb.media0"
@@ -538,6 +551,7 @@ test_normal_legacy_media_backing_is_no_media
 test_normal_data_disk_wins_over_legacy_media_backing
 test_normal_data_disk_wins_over_spaced_legacy_media_backing
 test_normal_mounted_image_and_network
+test_normal_trims_mounted_media_image
 test_normal_mounted_cdrom_image_and_network
 test_hid_only_descriptors_and_no_wake
 test_uses_one_udc

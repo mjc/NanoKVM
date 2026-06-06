@@ -30,6 +30,54 @@ add_mass_storage_function(){
     ln -s "functions/${USB_MASS_STORAGE_FUNC}" configs/c.1/
 }
 
+trim_boot_file(){
+    sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "${USB_BOOT_DIR}/$1"
+}
+
+add_virtual_media_function(){
+    disk="$1"
+    media_ro=0
+    media_cdrom=0
+    media_backing=''
+    media_inquiry="${USB_MASS_STORAGE_INQUIRY}"
+
+    if [ -n "${disk}" ] && [ "${disk}" != "${USB_DATA_DISK_BACKING}" ]
+    then
+        media_backing="${disk}"
+        if [ -e "${USB_BOOT_DIR}/usb.media0.cdrom" ]
+        then
+            media_ro=1
+            media_cdrom=1
+            media_inquiry="${USB_CDROM_INQUIRY}"
+        elif [ -e "${USB_BOOT_DIR}/usb.media0.ro" ]
+        then
+            media_ro=1
+        fi
+    fi
+
+    add_mass_storage_function "${media_backing}" "${media_ro}" "${media_cdrom}" "${media_inquiry}"
+}
+
+add_data_disk_function(){
+    add_mass_storage_function "${USB_DATA_DISK_BACKING}" 0 0 "${USB_DATA_DISK_INQUIRY}"
+}
+
+add_boot_mass_storage_function(){
+    media_disk=''
+    if [ -e "${USB_BOOT_DIR}/usb.media0" ]
+    then
+        media_disk=$(trim_boot_file usb.media0)
+    fi
+
+    if [ -e "${USB_BOOT_DIR}/usb.media0" ] && { [ "${media_disk}" != "${USB_DATA_DISK_BACKING}" ] || [ ! -e "${USB_BOOT_DIR}/usb.disk0" ]; }
+    then
+        add_virtual_media_function "${media_disk}"
+    elif [ -e "${USB_BOOT_DIR}/usb.disk0" ]
+    then
+        add_data_disk_function
+    fi
+}
+
 start_usb_dev(){
     prepare_usb_gadget "${USB_NORMAL_BCD_USB}" "${USB_NORMAL_BCD_DEVICE}" "${USB_NORMAL_CONFIG_ATTRIBUTES}" "${USB_NORMAL_MAX_POWER}"
 
@@ -48,37 +96,7 @@ start_usb_dev(){
         add_hid_functions "${USB_HID_REPORT_NORMAL_KEYBOARD}" "${USB_HID_REPORT_NORMAL_ABSOLUTE_MOUSE}"
     fi
 
-    media_disk=''
-    if [ -e "${USB_BOOT_DIR}/usb.media0" ]
-    then
-        media_disk=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "${USB_BOOT_DIR}/usb.media0")
-    fi
-
-    if [ -e "${USB_BOOT_DIR}/usb.media0" ] && { [ "${media_disk}" != "${USB_DATA_DISK_BACKING}" ] || [ ! -e "${USB_BOOT_DIR}/usb.disk0" ]; }
-    then
-        disk="${media_disk}"
-        media_ro=0
-        media_cdrom=0
-        media_backing=''
-        media_inquiry="${USB_MASS_STORAGE_INQUIRY}"
-        if [ -n "${disk}" ] && [ "${disk}" != "${USB_DATA_DISK_BACKING}" ]
-        then
-            media_backing="${disk}"
-            if [ -e "${USB_BOOT_DIR}/usb.media0.cdrom" ]
-            then
-                media_ro=1
-                media_cdrom=1
-                media_inquiry="${USB_CDROM_INQUIRY}"
-            elif [ -e "${USB_BOOT_DIR}/usb.media0.ro" ]
-            then
-                media_ro=1
-            fi
-        fi
-        add_mass_storage_function "${media_backing}" "${media_ro}" "${media_cdrom}" "${media_inquiry}"
-    elif [ -e "${USB_BOOT_DIR}/usb.disk0" ]
-    then
-        add_mass_storage_function "${USB_DATA_DISK_BACKING}" 0 0 "${USB_DATA_DISK_INQUIRY}"
-    fi
+    add_boot_mass_storage_function
 
     bind_first_udc
 }
