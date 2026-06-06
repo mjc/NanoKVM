@@ -173,6 +173,23 @@ func TestLegacyNoMediaImageIsHiddenFromMountedImage(t *testing.T) {
 	}
 }
 
+func TestMountedImageIgnoresStaleDataDiskImageState(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, DataDiskFlag, "")
+	writeFile(t, LUNFile, "/data/installer.iso")
+
+	image, err := MountedImage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image != "" {
+		t.Fatalf("mounted image for data disk = %q, want empty", image)
+	}
+}
+
 func TestSetVirtualMediaEnabledSetsFunctionDefaults(t *testing.T) {
 	withFakeGadget(t)
 
