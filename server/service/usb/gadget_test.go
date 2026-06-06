@@ -429,6 +429,46 @@ func TestLinkMassStorageFunctionDoesNotResetPreparedLUN(t *testing.T) {
 	assertContains(t, LUNInquiryString, cdromInquiry)
 }
 
+func TestPrepareDataDiskLUNLinksAfterModeAndBacking(t *testing.T) {
+	withFakeGadget(t)
+	writeFile(t, LUNRO, "1")
+	writeFile(t, LUNCDROM, "1")
+	writeFile(t, LUNInquiryString, lunInquiry(cdromInquiry))
+
+	if err := prepareDataDiskLUN(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertSymlink(t, DataDiskLink, DataDiskFunction)
+	assertFile(t, DataDiskLUNFile, LegacyNoMediaImage)
+	assertFile(t, LUNRO, "0")
+	assertFile(t, LUNCDROM, "0")
+	assertContains(t, LUNInquiryString, dataDiskInquiry)
+}
+
+func TestLinkDataDiskFunctionDoesNotResetPreparedLUN(t *testing.T) {
+	withFakeGadget(t)
+
+	if err := ensureDataDiskFunction(); err != nil {
+		t.Fatal(err)
+	}
+	if err := setMassStorageLUNMode("/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := attachMassStorageImage("/data/installer.iso"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linkDataDiskFunction(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertSymlink(t, DataDiskLink, DataDiskFunction)
+	assertFile(t, DataDiskLUNFile, "/data/installer.iso")
+	assertFile(t, LUNRO, "1")
+	assertFile(t, LUNCDROM, "1")
+	assertContains(t, LUNInquiryString, cdromInquiry)
+}
+
 func TestSetVirtualMediaEnabledIsIdempotent(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
