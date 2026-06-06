@@ -224,11 +224,18 @@ func SetRNDISEnabled(h HIDController, enabled bool) error {
 }
 
 func VirtualMediaEnabled() bool {
-	return Exists(MassStorageLink) && Exists(MassStorageFlag)
+	image, ok := massStorageFlagImage()
+	return Exists(MassStorageLink) && ok && image != LegacyNoMediaImage
 }
 
 func DataDiskEnabled() bool {
-	return Exists(DataDiskLink) && Exists(DataDiskFlag) && !Exists(MassStorageFlag)
+	image, massStorageFlagExists := massStorageFlagImage()
+	return Exists(DataDiskLink) && Exists(DataDiskFlag) && (!massStorageFlagExists || image == LegacyNoMediaImage)
+}
+
+func massStorageFlagImage() (string, bool) {
+	image, err := ReadTrimmed(MassStorageFlag)
+	return image, err == nil
 }
 
 func RNDISEnabled() bool {
