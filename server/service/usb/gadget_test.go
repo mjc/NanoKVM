@@ -206,6 +206,48 @@ func TestSetLUNImageFailurePreservesMountedMedia(t *testing.T) {
 	assertFile(t, LUNFile, "/data/old.iso")
 }
 
+func TestSetLUNImageDetachFailureDoesNotCreateMediaState(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Remove(UDCPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(UDCPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetLUNImage(&fakeHID{}, "/data/installer.iso", true); err == nil {
+		t.Fatal("SetLUNImage succeeded despite detach failure")
+	}
+
+	if Exists(MassStorageFlag) {
+		t.Fatal("detach-failed image mount created media flag")
+	}
+	if Exists(MassStorageLink) {
+		t.Fatal("detach-failed image mount created media link")
+	}
+}
+
+func TestSetLUNImageDetachFailurePreservesMountedMedia(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetLUNImage(hid, "/data/old.iso", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(UDCPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(UDCPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetLUNImage(hid, "/data/new.iso", true); err == nil {
+		t.Fatal("SetLUNImage succeeded despite detach failure")
+	}
+
+	assertFile(t, MassStorageFlag, "/data/old.iso")
+	assertFile(t, LUNFile, "/data/old.iso")
+}
+
 func TestLegacyNoMediaImageIsHiddenFromMountedImage(t *testing.T) {
 	withFakeGadget(t)
 	writeFile(t, LUNFile, LegacyNoMediaImage)
@@ -405,6 +447,31 @@ func TestSetVirtualMediaEnabledDisableFailurePreservesMediaState(t *testing.T) {
 	}
 }
 
+func TestSetVirtualMediaEnabledDisableDetachFailurePreservesMediaState(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetLUNImage(hid, "/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(UDCPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(UDCPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetVirtualMediaEnabled(hid, false); err == nil {
+		t.Fatal("SetVirtualMediaEnabled disable succeeded despite detach failure")
+	}
+
+	if !Exists(MassStorageFlag) {
+		t.Fatal("detach-failed media disable removed media flag")
+	}
+	if !Exists(MassStorageLink) {
+		t.Fatal("detach-failed media disable removed media link")
+	}
+}
+
 func TestVirtualMediaAndDataDiskAreMutuallyExclusive(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
@@ -526,6 +593,52 @@ func TestSetVirtualMediaEnabledFailurePreservesDataDisk(t *testing.T) {
 	}
 }
 
+func TestSetVirtualMediaEnabledDetachFailureDoesNotCreateMediaState(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Remove(UDCPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(UDCPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetVirtualMediaEnabled(&fakeHID{}, true); err == nil {
+		t.Fatal("SetVirtualMediaEnabled succeeded despite detach failure")
+	}
+
+	if Exists(MassStorageFlag) {
+		t.Fatal("detach-failed media enable created media flag")
+	}
+	if Exists(MassStorageLink) {
+		t.Fatal("detach-failed media enable created media link")
+	}
+}
+
+func TestSetVirtualMediaEnabledDetachFailurePreservesDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetDataDiskEnabled(hid, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(UDCPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(UDCPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetVirtualMediaEnabled(hid, true); err == nil {
+		t.Fatal("SetVirtualMediaEnabled succeeded despite detach failure")
+	}
+
+	if !DataDiskEnabled() {
+		t.Fatal("detach-failed media enable disabled active data disk")
+	}
+	if Exists(MassStorageFlag) {
+		t.Fatal("detach-failed media enable created media flag")
+	}
+}
+
 func TestSetDataDiskEnabledEvictsEmptyVirtualMedia(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
@@ -580,6 +693,53 @@ func TestSetDataDiskEnabledFailurePreservesMedia(t *testing.T) {
 	if Exists(DataDiskFlag) {
 		t.Fatal("failed data disk enable left data disk flag behind")
 	}
+}
+
+func TestSetDataDiskEnabledDetachFailureDoesNotCreateDataDiskState(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Remove(UDCPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(UDCPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetDataDiskEnabled(&fakeHID{}, true); err == nil {
+		t.Fatal("SetDataDiskEnabled succeeded despite detach failure")
+	}
+
+	if Exists(DataDiskFlag) {
+		t.Fatal("detach-failed data disk enable created data disk flag")
+	}
+	if Exists(DataDiskLink) {
+		t.Fatal("detach-failed data disk enable created data disk link")
+	}
+}
+
+func TestSetDataDiskEnabledDetachFailurePreservesMedia(t *testing.T) {
+	withFakeGadget(t)
+	hid := &fakeHID{}
+	if err := SetLUNImage(hid, "/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(UDCPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(UDCPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetDataDiskEnabled(hid, true); err == nil {
+		t.Fatal("SetDataDiskEnabled succeeded despite detach failure")
+	}
+
+	if !VirtualMediaEnabled() {
+		t.Fatal("detach-failed data disk enable disabled active media")
+	}
+	if Exists(DataDiskFlag) {
+		t.Fatal("detach-failed data disk enable created data disk flag")
+	}
+	assertFile(t, MassStorageFlag, "/data/installer.iso")
 }
 
 func TestDisablingInactiveSelectorPreservesActiveMassStorage(t *testing.T) {
@@ -932,19 +1092,32 @@ func TestWithDetachedUDCReportsDetachAttachAndOpenErrors(t *testing.T) {
 	if err := os.Remove(UDCPath); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(UDCPath, 0o777); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(filepath.Join(UDCClass, "4340000.usb")); err != nil {
 		t.Fatal(err)
 	}
 	hid := &failingHID{}
+	mutated := false
 
-	err := WithDetachedUDC(hid, func() error { return errors.New("mutation failed") })
+	err := WithDetachedUDC(hid, func() error {
+		mutated = true
+		return errors.New("mutation failed")
+	})
 	if err == nil {
 		t.Fatal("WithDetachedUDC succeeded with detach, attach, mutation, and open failures")
 	}
-	for _, want := range []string{"mutation failed", "no UDC found", "open failed"} {
+	for _, want := range []string{"clear", "open failed"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not contain %q", err, want)
 		}
+	}
+	if mutated {
+		t.Fatal("WithDetachedUDC ran mutation after detach failure")
+	}
+	if strings.Contains(err.Error(), "mutation failed") || strings.Contains(err.Error(), "no UDC found") {
+		t.Fatalf("error %q includes mutation or attach failure after detach failure", err)
 	}
 }
 
