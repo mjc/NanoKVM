@@ -37,15 +37,13 @@ func withFakeGadget(t *testing.T) {
 		GadgetPath, ConfigPath, ModeFlag, UDCPath, UDCClass, OTGRole,
 		MassStorageFunction, MassStorageLink, MassStorageFlag, MassStorageROFlag,
 		MassStorageCDROMFlag, LUNPath, LUNFile, LUNCDROM, LUNInquiryString, LUNRO, LUNForcedEject,
-		DataDiskFunction, DataDiskLink, DataDiskFlag, DataDiskLUNPath,
-		DataDiskLUNFile, RNDISFunction, RNDISLink, RNDISFlag,
+		DataDiskFlag, RNDISFunction, RNDISLink, RNDISFlag,
 	}
 	t.Cleanup(func() {
 		GadgetPath, ConfigPath, ModeFlag, UDCPath, UDCClass, OTGRole = old[0], old[1], old[2], old[3], old[4], old[5]
 		MassStorageFunction, MassStorageLink, MassStorageFlag, MassStorageROFlag = old[6], old[7], old[8], old[9]
 		MassStorageCDROMFlag, LUNPath, LUNFile, LUNCDROM, LUNInquiryString, LUNRO, LUNForcedEject = old[10], old[11], old[12], old[13], old[14], old[15], old[16]
-		DataDiskFunction, DataDiskLink, DataDiskFlag, DataDiskLUNPath = old[17], old[18], old[19], old[20]
-		DataDiskLUNFile, RNDISFunction, RNDISLink, RNDISFlag = old[21], old[22], old[23], old[24]
+		DataDiskFlag, RNDISFunction, RNDISLink, RNDISFlag = old[17], old[18], old[19], old[20]
 	})
 
 	root := t.TempDir()
@@ -68,11 +66,7 @@ func withFakeGadget(t *testing.T) {
 	LUNRO = filepath.Join(LUNPath, "ro")
 	LUNForcedEject = filepath.Join(LUNPath, "forced_eject")
 
-	DataDiskFunction = MassStorageFunction
-	DataDiskLink = MassStorageLink
 	DataDiskFlag = filepath.Join(root, "boot", "usb.disk0")
-	DataDiskLUNPath = LUNPath
-	DataDiskLUNFile = LUNFile
 
 	RNDISFunction = filepath.Join(GadgetPath, "functions", "rndis.usb0")
 	RNDISLink = filepath.Join(ConfigPath, "rndis.usb0")
@@ -83,7 +77,6 @@ func withFakeGadget(t *testing.T) {
 		UDCClass,
 		filepath.Dir(MassStorageFlag),
 		LUNPath,
-		DataDiskLUNPath,
 		filepath.Dir(RNDISFunction),
 	} {
 		if err := os.MkdirAll(dir, 0o777); err != nil {
@@ -97,9 +90,6 @@ func withFakeGadget(t *testing.T) {
 	for _, path := range []string{
 		LUNFile, LUNCDROM, LUNInquiryString, LUNRO,
 		filepath.Join(LUNPath, "removable"),
-		DataDiskLUNFile,
-		filepath.Join(DataDiskLUNPath, "removable"),
-		filepath.Join(DataDiskLUNPath, "inquiry_string"),
 	} {
 		writeFile(t, path, "")
 	}
@@ -440,8 +430,8 @@ func TestPrepareDataDiskLUNLinksAfterModeAndBacking(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertSymlink(t, DataDiskLink, DataDiskFunction)
-	assertFile(t, DataDiskLUNFile, LegacyNoMediaImage)
+	assertSymlink(t, MassStorageLink, MassStorageFunction)
+	assertFile(t, LUNFile, LegacyNoMediaImage)
 	assertFile(t, LUNRO, "0")
 	assertFile(t, LUNCDROM, "0")
 	assertContains(t, LUNInquiryString, dataDiskInquiry)
@@ -876,7 +866,7 @@ func TestSetDataDiskEnabledFailureDoesNotExposeUnpersistedDataDisk(t *testing.T)
 	if Exists(DataDiskFlag) {
 		t.Fatal("failed data disk enable left data disk flag behind")
 	}
-	if Exists(DataDiskLink) {
+	if Exists(MassStorageLink) {
 		t.Fatal("failed data disk enable left unpersisted data disk link")
 	}
 }
@@ -897,7 +887,7 @@ func TestSetDataDiskEnabledDetachFailureDoesNotCreateDataDiskState(t *testing.T)
 	if Exists(DataDiskFlag) {
 		t.Fatal("detach-failed data disk enable created data disk flag")
 	}
-	if Exists(DataDiskLink) {
+	if Exists(MassStorageLink) {
 		t.Fatal("detach-failed data disk enable created data disk link")
 	}
 }
@@ -1068,11 +1058,11 @@ func TestSetDataDiskEnabledDisablesCleanly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertFile(t, DataDiskLUNFile, "\n")
+	assertFile(t, LUNFile, "\n")
 	if Exists(DataDiskFlag) {
 		t.Fatal("data disk flag still exists after disabling data disk")
 	}
-	if Exists(DataDiskLink) {
+	if Exists(MassStorageLink) {
 		t.Fatal("data disk link still exists after disabling data disk")
 	}
 }
@@ -1097,7 +1087,7 @@ func TestSetDataDiskEnabledDisableFailurePreservesDataDiskState(t *testing.T) {
 	if !Exists(DataDiskFlag) {
 		t.Fatal("failed data disk disable removed data disk flag")
 	}
-	if !Exists(DataDiskLink) {
+	if !Exists(MassStorageLink) {
 		t.Fatal("failed data disk disable removed data disk link")
 	}
 }
@@ -1194,6 +1184,19 @@ func TestSetRNDISEnabledTogglesFlagAndLink(t *testing.T) {
 	if Exists(RNDISLink) {
 		t.Fatal("RNDIS link still exists after disabling RNDIS")
 	}
+}
+
+func TestPrepareRNDISFunctionCreatesAndLinks(t *testing.T) {
+	withFakeGadget(t)
+
+	if err := prepareRNDISFunction(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !Exists(RNDISFunction) {
+		t.Fatal("RNDIS function was not created")
+	}
+	assertSymlink(t, RNDISLink, RNDISFunction)
 }
 
 func TestEnabledStateComesFromConfigLinks(t *testing.T) {
@@ -1359,6 +1362,74 @@ func TestMassStorageOwnerClassifiesSharedSlot(t *testing.T) {
 	}
 }
 
+func TestMassStorageBootStateClassifiesLegacyFlags(t *testing.T) {
+	tests := []struct {
+		name             string
+		mediaFlag        *string
+		dataDiskFlag     bool
+		wantOwner        massStorageOwner
+		wantMountedImage string
+		wantLegacyState  bool
+	}{
+		{
+			name:      "no flags",
+			wantOwner: massStorageOwnerNone,
+		},
+		{
+			name:             "media image",
+			mediaFlag:        stringPtr("/data/installer.iso"),
+			wantOwner:        massStorageOwnerMedia,
+			wantMountedImage: "/data/installer.iso",
+		},
+		{
+			name:      "empty media",
+			mediaFlag: stringPtr(""),
+			wantOwner: massStorageOwnerMedia,
+		},
+		{
+			name:            "legacy media only is ownerless",
+			mediaFlag:       stringPtr(LegacyNoMediaImage),
+			wantOwner:       massStorageOwnerNone,
+			wantLegacyState: true,
+		},
+		{
+			name:            "legacy media with data disk flag is data disk",
+			mediaFlag:       stringPtr(LegacyNoMediaImage),
+			dataDiskFlag:    true,
+			wantOwner:       massStorageOwnerDataDisk,
+			wantLegacyState: true,
+		},
+		{
+			name:         "data disk flag without media",
+			dataDiskFlag: true,
+			wantOwner:    massStorageOwnerDataDisk,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withFakeGadget(t)
+			if tt.mediaFlag != nil {
+				writeFile(t, MassStorageFlag, *tt.mediaFlag)
+			}
+			if tt.dataDiskFlag {
+				writeFile(t, DataDiskFlag, "")
+			}
+
+			state := readMassStorageBootState()
+			if got := state.owner(); got != tt.wantOwner {
+				t.Fatalf("owner() = %v, want %v", got, tt.wantOwner)
+			}
+			if got := state.mountedMediaImage(); got != tt.wantMountedImage {
+				t.Fatalf("mountedMediaImage() = %q, want %q", got, tt.wantMountedImage)
+			}
+			if got := state.hasLegacyDataDiskMediaState(); got != tt.wantLegacyState {
+				t.Fatalf("hasLegacyDataDiskMediaState() = %v, want %v", got, tt.wantLegacyState)
+			}
+		})
+	}
+}
+
 func TestWithDetachedUDCReattachesAfterMutationError(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
@@ -1419,6 +1490,20 @@ func TestFirstUDCRequiresADevice(t *testing.T) {
 
 	if _, err := FirstUDC(); err == nil {
 		t.Fatal("FirstUDC succeeded with no UDC entries")
+	}
+}
+
+func TestFirstUDCSelectsSortedFirstDevice(t *testing.T) {
+	withFakeGadget(t)
+	writeFile(t, filepath.Join(UDCClass, "4330000.usb"), "")
+	writeFile(t, filepath.Join(UDCClass, "4350000.usb"), "")
+
+	udc, err := FirstUDC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if udc != "4330000.usb" {
+		t.Fatalf("FirstUDC() = %q, want sorted first device", udc)
 	}
 }
 
