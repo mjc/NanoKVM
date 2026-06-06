@@ -153,6 +153,9 @@ func SetVirtualMediaEnabled(h HIDController, enabled bool) error {
 			return setMassStorageLUN("", false)
 		}
 
+		if DataDiskEnabled() {
+			return nil
+		}
 		if !Exists(MassStorageFlag) {
 			return nil
 		}
