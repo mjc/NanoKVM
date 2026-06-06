@@ -572,6 +572,22 @@ func TestEnabledStateComesFromConfigLinks(t *testing.T) {
 	}
 }
 
+func TestEnabledStateTreatsLegacyMediaBackingAsDataDisk(t *testing.T) {
+	withFakeGadget(t)
+	if err := os.Symlink(MassStorageFunction, MassStorageLink); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, MassStorageFlag, LegacyNoMediaImage)
+	writeFile(t, DataDiskFlag, "")
+
+	if VirtualMediaEnabled() {
+		t.Fatal("legacy media backing reported as virtual media")
+	}
+	if !DataDiskEnabled() {
+		t.Fatal("data disk did not report enabled with legacy media backing")
+	}
+}
+
 func TestWithDetachedUDCReattachesAfterMutationError(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
