@@ -364,6 +364,8 @@ test_normal_media_wins_over_data_disk(){
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/ro")" "0" "empty media ro flag"
     assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/cdrom")" "0" "empty media cdrom flag"
     assert_contains "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/inquiry_string" "USB Mass Storage" "empty media inquiry"
+    assert_no_file "${g}/configs/c.1/mass_storage.disk1"
+    assert_no_file "${g}/functions/mass_storage.disk1"
 }
 
 test_normal_data_disk_uses_mass_storage_slot(){
