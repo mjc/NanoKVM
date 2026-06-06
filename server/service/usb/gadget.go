@@ -294,6 +294,9 @@ func MountedImage() (string, error) {
 }
 
 func CDROMFlag() (int64, error) {
+	if DataDiskEnabled() {
+		return 0, nil
+	}
 	flag, err := ReadTrimmed(LUNCDROM)
 	if err != nil {
 		return 0, err
