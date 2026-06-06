@@ -393,6 +393,42 @@ func TestSetVirtualMediaEnabledClearsStaleMediaState(t *testing.T) {
 	assertContains(t, LUNInquiryString, massStorageInquiry)
 }
 
+func TestPrepareMassStorageLUNLinksAfterModeAndBacking(t *testing.T) {
+	withFakeGadget(t)
+
+	if err := prepareMassStorageLUN("/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+
+	assertSymlink(t, MassStorageLink, MassStorageFunction)
+	assertFile(t, LUNFile, "/data/installer.iso")
+	assertFile(t, LUNRO, "1")
+	assertFile(t, LUNCDROM, "1")
+	assertContains(t, LUNInquiryString, cdromInquiry)
+}
+
+func TestLinkMassStorageFunctionDoesNotResetPreparedLUN(t *testing.T) {
+	withFakeGadget(t)
+
+	if err := ensureMassStorageFunction(); err != nil {
+		t.Fatal(err)
+	}
+	if err := setMassStorageLUNMode("/data/installer.iso", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := attachMassStorageImage("/data/installer.iso"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linkMassStorageFunction(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertFile(t, LUNFile, "/data/installer.iso")
+	assertFile(t, LUNRO, "1")
+	assertFile(t, LUNCDROM, "1")
+	assertContains(t, LUNInquiryString, cdromInquiry)
+}
+
 func TestSetVirtualMediaEnabledIsIdempotent(t *testing.T) {
 	withFakeGadget(t)
 	hid := &fakeHID{}
