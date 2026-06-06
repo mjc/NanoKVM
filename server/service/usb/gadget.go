@@ -286,6 +286,9 @@ func DetachLUN() error {
 }
 
 func MountedImage() (string, error) {
+	if DataDiskEnabled() {
+		return "", nil
+	}
 	image, err := ReadTrimmed(LUNFile)
 	if err != nil {
 		return "", err
