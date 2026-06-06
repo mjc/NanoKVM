@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -69,11 +70,133 @@ func TestChangePasswordRevokesTokensAfterSuccess(t *testing.T) {
 	}
 }
 
+func TestChangePasswordDoesNotRevokeTokensForInvalidRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	setPasswordChangeHooks(t, passwordChangeHooks{
+		setAccount: func(username string, hashedPassword string) error {
+			t.Fatal("setAccount should not be called for invalid password changes")
+			return nil
+		},
+		changeRootPassword: func(password string) error {
+			t.Fatal("changeRootPassword should not be called for invalid password changes")
+			return nil
+		},
+		delAccount: func() error {
+			t.Fatal("delAccount should not be called for invalid password changes")
+			return nil
+		},
+		revokeTokens: func() {
+			t.Fatal("tokens should not be revoked for invalid password changes")
+		},
+	})
+
+	w := changePasswordRequest(t, proto.ChangePasswordReq{
+		Username: "admin",
+		Password: "",
+	})
+
+	assertAuthResponse(t, w, -1, "invalid parameters")
+}
+
+func TestChangePasswordDoesNotRevokeTokensForInvalidPassword(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	setPasswordChangeHooks(t, passwordChangeHooks{
+		setAccount: func(username string, hashedPassword string) error {
+			t.Fatal("setAccount should not be called for invalid password changes")
+			return nil
+		},
+		changeRootPassword: func(password string) error {
+			t.Fatal("changeRootPassword should not be called for invalid password changes")
+			return nil
+		},
+		delAccount: func() error {
+			t.Fatal("delAccount should not be called for invalid password changes")
+			return nil
+		},
+		revokeTokens: func() {
+			t.Fatal("tokens should not be revoked for invalid password changes")
+		},
+	})
+
+	w := changePasswordRequest(t, proto.ChangePasswordReq{
+		Username: "admin",
+		Password: "not-a-valid-encrypted-password",
+	})
+
+	assertAuthResponse(t, w, -2, "invalid password")
+}
+
+func TestChangePasswordDoesNotRevokeTokensWhenSavingPasswordFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var setAccountCalled bool
+	setPasswordChangeHooks(t, passwordChangeHooks{
+		setAccount: func(username string, hashedPassword string) error {
+			setAccountCalled = true
+			return errors.New("save failed")
+		},
+		changeRootPassword: func(password string) error {
+			t.Fatal("changeRootPassword should not be called when saving the password fails")
+			return nil
+		},
+		delAccount: func() error {
+			t.Fatal("delAccount should not be called when saving the password fails")
+			return nil
+		},
+		revokeTokens: func() {
+			t.Fatal("tokens should not be revoked when saving the password fails")
+		},
+	})
+
+	w := changePasswordRequest(t, proto.ChangePasswordReq{
+		Username: "admin",
+		Password: encryptedPassword("changed-password"),
+	})
+
+	assertAuthResponse(t, w, -4, "failed to save password")
+	if !setAccountCalled {
+		t.Fatal("expected setAccount to be called")
+	}
+}
+
+func TestChangePasswordDoesNotRevokeTokensWhenRootPasswordChangeFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var deletedAccount bool
+	setPasswordChangeHooks(t, passwordChangeHooks{
+		setAccount: func(username string, hashedPassword string) error {
+			return nil
+		},
+		changeRootPassword: func(password string) error {
+			return errors.New("root password update failed")
+		},
+		delAccount: func() error {
+			deletedAccount = true
+			return nil
+		},
+		revokeTokens: func() {
+			t.Fatal("tokens should not be revoked when the root password change fails")
+		},
+	})
+
+	w := changePasswordRequest(t, proto.ChangePasswordReq{
+		Username: "admin",
+		Password: encryptedPassword("changed-password"),
+	})
+
+	assertAuthResponse(t, w, -5, "failed to change password")
+	if !deletedAccount {
+		t.Fatal("expected stored account rollback when root password change fails")
+	}
+}
+
 func TestIsDefaultPasswordChanged(t *testing.T) {
 	bcryptAdmin := hashPassword(t, "admin")
 	bcryptChanged := hashPassword(t, "changed-password")
-	legacyAdmin := url.QueryEscape(aes256.Encrypt("admin", utils.SecretKey))
-	legacyChanged := url.QueryEscape(aes256.Encrypt("changed-password", utils.SecretKey))
+	legacyAdmin := encryptedPassword("admin")
+	legacyChanged := encryptedPassword("changed-password")
 
 	for _, tt := range []struct {
 		name    string
@@ -95,6 +218,34 @@ func TestIsDefaultPasswordChanged(t *testing.T) {
 	}
 }
 
+type passwordChangeHooks struct {
+	setAccount         func(username string, hashedPassword string) error
+	changeRootPassword func(password string) error
+	delAccount         func() error
+	revokeTokens       func()
+}
+
+func setPasswordChangeHooks(t *testing.T, hooks passwordChangeHooks) {
+	t.Helper()
+
+	previousSetAccount := setAccount
+	previousChangeRootPassword := changeRootPassword
+	previousDelAccount := delAccount
+	previousRevokeTokens := revokeTokensAfterPasswordChange
+
+	setAccount = hooks.setAccount
+	changeRootPassword = hooks.changeRootPassword
+	delAccount = hooks.delAccount
+	revokeTokensAfterPasswordChange = hooks.revokeTokens
+
+	t.Cleanup(func() {
+		setAccount = previousSetAccount
+		changeRootPassword = previousChangeRootPassword
+		delAccount = previousDelAccount
+		revokeTokensAfterPasswordChange = previousRevokeTokens
+	})
+}
+
 func changePasswordRequest(t *testing.T, payload proto.ChangePasswordReq) *httptest.ResponseRecorder {
 	t.Helper()
 
@@ -112,6 +263,10 @@ func changePasswordRequest(t *testing.T, payload proto.ChangePasswordReq) *httpt
 	router.ServeHTTP(w, req)
 
 	return w
+}
+
+func encryptedPassword(password string) string {
+	return url.QueryEscape(aes256.Encrypt(password, utils.SecretKey))
 }
 
 func assertAuthResponse(t *testing.T, w *httptest.ResponseRecorder, wantCode int, wantMsg string) {
