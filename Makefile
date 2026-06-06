@@ -12,8 +12,10 @@ DOCKER_RUN_BASE := docker run -e UID=$(UID) -e GID=$(GID) -v $(PWD):/home/build/
 # Build commands
 GO_BUILD_CMD := cd /home/build/NanoKVM/server && go mod tidy && CGO_ENABLED=1 GOOS=linux GOARCH=riscv64 CC=riscv64-unknown-linux-musl-gcc CGO_CFLAGS="-mcpu=c906fdv -march=rv64imafdcv0p7xthead -mcmodel=medany -mabi=lp64d" go build
 SUPPORT_BUILD_CMD := . ./home/build/MaixCDK/bin/activate && cd /home/build/NanoKVM/support/sg2002 && ./build kvm_system && ./build kvm_system add_to_kvmapp
+GO_TEST_CMD := cd server && go test ./... -count=1
+SCRIPT_RUNNER_TEST_CMD := cd server && go test -tags script_runner_regression ./service/vm/script.go ./service/vm/service.go ./service/vm/script_runner_regression_test.go -count=1
 
-.PHONY: help check-root builder-image rebuild-image check-image shell app support all clean
+.PHONY: help check-root builder-image rebuild-image check-image shell app support all test test-go test-script-runner clean
 
 # Default target
 all: app support
@@ -30,6 +32,7 @@ help:
 	@echo "  shell         - Enter interactive builder environment"
 	@echo "  app           - Build Go application server"
 	@echo "  support       - Build hardware support libraries"
+	@echo "  test          - Run Go tests, including script runner regressions"
 	@echo "  all           - Build both app and support (default)"
 	@echo "  clean         - Clean build artifacts"
 	@echo ""
@@ -82,6 +85,16 @@ app: check-root builder-image
 support: check-root builder-image
 	@echo "Building support..."
 	@$(DOCKER_RUN_BASE) -it $(IMAGE_NAME) /bin/bash -c '$(SUPPORT_BUILD_CMD)'
+
+test: test-go test-script-runner
+
+test-go:
+	@echo "Running Go tests..."
+	@$(GO_TEST_CMD)
+
+test-script-runner:
+	@echo "Running script runner regression tests..."
+	@$(SCRIPT_RUNNER_TEST_CMD)
 
 # Clean build artifacts
 clean:
