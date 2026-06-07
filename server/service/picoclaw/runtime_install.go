@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	picoclawSecurity "NanoKVM-Server/service/picoclaw/security"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -65,7 +67,7 @@ func (s *Service) runInstallRuntime(ctx context.Context, cancel context.CancelFu
 	defer cancel()
 
 	_ = os.RemoveAll(picoclawCacheDir)
-	if err := os.MkdirAll(picoclawCacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(picoclawCacheDir, 0o700); err != nil {
 		log.Errorf("picoclaw install: failed to create cache directory %s: %v", picoclawCacheDir, err)
 		s.finishInstallFailure("install_failed", fmt.Sprintf("failed to create cache directory: %v", err))
 		return
@@ -90,7 +92,7 @@ func (s *Service) runInstallRuntime(ctx context.Context, cancel context.CancelFu
 	log.Debug("picoclaw install: checksum file downloaded")
 
 	archivePath := filepath.Join(picoclawCacheDir, "picoclaw.tar.gz")
-	log.Debugf("picoclaw install: downloading archive from %s to %s", picoclawDownloadURL, archivePath)
+	log.Debug("picoclaw install: downloading archive")
 	if err := downloadPicoclawArchive(ctx, archivePath, func(downloaded int64, total int64) {
 		progress := 10
 		if total > 0 {
@@ -166,13 +168,13 @@ func downloadPicoclawArchive(ctx context.Context, destination string, onProgress
 		return fmt.Errorf("failed to download picoclaw: unexpected status %s", resp.Status)
 	}
 
-	file, err := os.Create(destination)
+	file, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to create archive file: %w", err)
 	}
 	defer file.Close()
 
-	if err := copyWithProgress(ctx, file, resp.Body, resp.ContentLength, onProgress); err != nil {
+	if err := picoclawSecurity.CopyWithProgress(ctx, file, resp.Body, resp.ContentLength, maxPicoclawArchiveBytes, onProgress); err != nil {
 		return fmt.Errorf("failed to save archive: %w", err)
 	}
 	return nil
@@ -207,39 +209,6 @@ func downloadPicoclawChecksum(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return digest, nil
-}
-
-func copyWithProgress(ctx context.Context, dst io.Writer, src io.Reader, total int64, onProgress func(downloaded int64, total int64)) error {
-	buffer := make([]byte, 32*1024)
-	var downloaded int64
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		n, readErr := src.Read(buffer)
-		if n > 0 {
-			if _, writeErr := dst.Write(buffer[:n]); writeErr != nil {
-				return writeErr
-			}
-			downloaded += int64(n)
-			if onProgress != nil {
-				onProgress(downloaded, total)
-			}
-		}
-		if readErr == io.EOF {
-			if onProgress != nil {
-				onProgress(downloaded, total)
-			}
-			return nil
-		}
-		if readErr != nil {
-			return readErr
-		}
-	}
 }
 
 func (s *Service) setInstallProgress(stage string, progress int, lastError string) {
@@ -354,7 +323,7 @@ func verifyFileSHA512(filePath string, expectedDigest string) error {
 
 	actualDigest := hex.EncodeToString(hasher.Sum(nil))
 	if actualDigest != expectedDigest {
-		return fmt.Errorf("sha512 mismatch: got %s", actualDigest)
+		return fmt.Errorf("sha512 mismatch")
 	}
 
 	return nil
@@ -382,10 +351,7 @@ func extractPicoclawBinary(archivePath string, destinationDir string) (string, e
 		if err != nil {
 			return "", fmt.Errorf("failed to extract archive: %w", err)
 		}
-		if header.Typeflag != tar.TypeReg {
-			continue
-		}
-		if filepath.Base(header.Name) != "picoclaw" {
+		if !picoclawSecurity.IsPicoclawBinaryEntry(header) {
 			continue
 		}
 

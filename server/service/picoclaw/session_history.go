@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	picoclawSecurity "NanoKVM-Server/service/picoclaw/security"
 )
 
 const (
@@ -94,6 +96,10 @@ func resolvePicoclawSessionsPath() (string, error) {
 
 func sanitizeSessionKey(key string) string {
 	return strings.ReplaceAll(key, ":", "_")
+}
+
+func isValidPicoclawSessionID(sessionID string) bool {
+	return picoclawSecurity.IsValidSessionID(sessionID)
 }
 
 func extractPicoSessionID(key string) (string, bool) {
@@ -243,6 +249,10 @@ func (s *Service) GetSession(c *gin.Context) {
 		writePicoclawError(c, newPicoclawError(CodeInvalidAction, "missing session id"))
 		return
 	}
+	if !isValidPicoclawSessionID(sessionID) {
+		writePicoclawError(c, newPicoclawError(CodeInvalidAction, "invalid session id"))
+		return
+	}
 
 	dir, err := resolvePicoclawSessionsPath()
 	if err != nil {
@@ -297,6 +307,10 @@ func (s *Service) DeleteSession(c *gin.Context) {
 	sessionID := strings.TrimSpace(c.Param("id"))
 	if sessionID == "" {
 		writePicoclawError(c, newPicoclawError(CodeInvalidAction, "missing session id"))
+		return
+	}
+	if !isValidPicoclawSessionID(sessionID) {
+		writePicoclawError(c, newPicoclawError(CodeInvalidAction, "invalid session id"))
 		return
 	}
 

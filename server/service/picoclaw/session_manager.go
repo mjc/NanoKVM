@@ -23,6 +23,12 @@ func GetSessionManager() *SessionManager {
 }
 
 func (m *SessionManager) Register(sessionID string, downstream *websocket.Conn) (*GatewaySession, *PicoclawError) {
+	if !isValidPicoclawSessionID(sessionID) {
+		err := newPicoclawError(CodeInvalidAction, "invalid session id")
+		err.SessionID = sessionID
+		return nil, err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
