@@ -19,7 +19,7 @@ class Http {
     this.instance = axios.create({
       baseURL,
       withCredentials,
-      timeout: 60 * 1000
+      timeout: 15 * 1000
     });
 
     this.setInterceptors();
@@ -39,7 +39,6 @@ class Http {
         return response.data;
       },
       (error) => {
-        console.log(error);
         const code = error.response?.status;
         if (code === 401) {
           removeToken();

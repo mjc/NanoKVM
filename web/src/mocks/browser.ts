@@ -6,7 +6,7 @@ export const handlers = [
     return HttpResponse.json({
         code: 0,
         data: {
-            token: 'mocked_token',
+            token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.mock.signature',
         },
     })
   }),

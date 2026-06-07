@@ -5,7 +5,7 @@ type GetHidModeRsp struct {
 }
 
 type SetHidModeReq struct {
-	Mode string `validate:"required"` // normal or hid-only
+	Mode string `json:"mode" validate:"required,oneof=normal hid-only"` // normal or hid-only
 }
 
 type ShortcutKey struct {
@@ -23,15 +23,15 @@ type GetShortcutsRsp struct {
 }
 
 type AddShortcutReq struct {
-	Keys []ShortcutKey `validate:"required"`
+	Keys []ShortcutKey `json:"keys" validate:"required,dive"`
 }
 
 type DeleteShortcutReq struct {
-	ID string `validate:"required"`
+	ID string `json:"id" validate:"required"`
 }
 
 type SetLeaderKeyReq struct {
-	Key string `validate:"omitempty"`
+	Key string `json:"key" validate:"omitempty"`
 }
 
 type GetLeaderKeyRsp struct {

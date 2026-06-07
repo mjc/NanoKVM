@@ -20,8 +20,8 @@ type GetHardwareRsp struct {
 }
 
 type SetGpioReq struct {
-	Type     string `validate:"required"`  // reset / power
-	Duration uint   `validate:"omitempty"` // press time (unit: milliseconds)
+	Type     string `json:"type" validate:"required,oneof=reset power"`    // reset / power
+	Duration uint   `json:"duration" validate:"omitempty,min=0,max=30000"` // press time (unit: milliseconds)
 }
 
 type GetGpioRsp struct {
@@ -30,8 +30,8 @@ type GetGpioRsp struct {
 }
 
 type SetScreenReq struct {
-	Type  string `validate:"required"` // resolution / fps / quality
-	Value int    `validate:"number"`   // value
+	Type  string `json:"type" validate:"required,oneof=resolution fps quality"` // resolution / fps / quality
+	Value int    `json:"value" validate:"number,min=0,max=10000"`               // value
 }
 
 type GetScriptsRsp struct {
@@ -43,8 +43,8 @@ type UploadScriptRsp struct {
 }
 
 type RunScriptReq struct {
-	Name string `validate:"required"`
-	Type string `validate:"required"` // foreground | background
+	Name string `json:"name" validate:"required"`
+	Type string `json:"type" validate:"required,oneof=foreground background"` // foreground | background
 }
 
 type RunScriptRsp struct {
@@ -52,7 +52,7 @@ type RunScriptRsp struct {
 }
 
 type DeleteScriptReq struct {
-	Name string `validate:"required"`
+	Name string `json:"name" validate:"required"`
 }
 
 // autostart
@@ -71,7 +71,7 @@ type GetVirtualDeviceRsp struct {
 }
 
 type UpdateVirtualDeviceReq struct {
-	Device string `validate:"required"`
+	Device string `json:"device" validate:"required,oneof=network media disk"`
 }
 
 type UpdateVirtualDeviceRsp struct {
@@ -79,8 +79,8 @@ type UpdateVirtualDeviceRsp struct {
 }
 
 type SetMemoryLimitReq struct {
-	Enabled bool  `validate:"omitempty"`
-	Limit   int64 `validate:"omitempty"`
+	Enabled bool  `json:"enabled" validate:"omitempty"`
+	Limit   int64 `json:"limit" validate:"omitempty,min=0,max=1073741824"`
 }
 
 type GetMemoryLimitRsp struct {
@@ -89,7 +89,7 @@ type GetMemoryLimitRsp struct {
 }
 
 type SetOledReq struct {
-	Sleep int `validate:"omitempty"`
+	Sleep int `json:"sleep" validate:"omitempty,min=0,max=86400"`
 }
 
 type GetOLEDRsp struct {
@@ -110,7 +110,7 @@ type GetSwapRsp struct {
 }
 
 type SetSwapReq struct {
-	Size int64 `validate:"omitempty"` // unit: MB
+	Size int64 `json:"size" validate:"omitempty,min=0,max=65536"` // unit: MB
 }
 
 type GetMouseJigglerRsp struct {
@@ -119,8 +119,8 @@ type GetMouseJigglerRsp struct {
 }
 
 type SetMouseJigglerReq struct {
-	Enabled bool   `validate:"omitempty"`
-	Mode    string `validate:"omitempty"`
+	Enabled bool   `json:"enabled" validate:"omitempty"`
+	Mode    string `json:"mode" validate:"omitempty,oneof=random circle"`
 }
 
 type GetMdnsStateRsp struct {
@@ -128,7 +128,7 @@ type GetMdnsStateRsp struct {
 }
 
 type SetHostnameReq struct {
-	Hostname string `validate:"required"`
+	Hostname string `json:"hostname" validate:"required,hostname,max=253"`
 }
 
 type GetHostnameRsp struct {
@@ -136,7 +136,7 @@ type GetHostnameRsp struct {
 }
 
 type SetWebTitleReq struct {
-	Title string `validate:"omitempty"`
+	Title string `json:"title" validate:"omitempty,max=64"`
 }
 
 type GetWebTitleRsp struct {
@@ -144,5 +144,5 @@ type GetWebTitleRsp struct {
 }
 
 type SetTlsReq struct {
-	Enabled bool `validate:"omitempty"`
+	Enabled bool `json:"enabled" validate:"omitempty"`
 }

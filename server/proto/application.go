@@ -10,5 +10,5 @@ type GetPreviewRsp struct {
 }
 
 type SetPreviewReq struct {
-	Enable bool `validate:"omitempty"`
+	Enable bool `json:"enable" validate:"omitempty"`
 }

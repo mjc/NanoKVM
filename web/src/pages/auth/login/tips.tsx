@@ -7,6 +7,7 @@ const { Text } = Typography;
 export const Tips = () => {
   const { t } = useTranslation();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const resetUrl = 'https://wiki.sipeed.com/hardware/en/kvm/NanoKVM/reset.html';
 
   const showModal = () => {
     setIsModalOpen(true);
@@ -39,7 +40,11 @@ export const Tips = () => {
 
             <div className="flex items-center space-x-1">
               <span>{t('auth.tips.reset2')}</span>
-              <a href="https://wiki.sipeed.com/hardware/en/kvm/NanoKVM/reset.html" target="_blank">
+              <a
+                href={resetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 wiki
               </a>
             </div>
@@ -47,11 +52,11 @@ export const Tips = () => {
             <ul className="list-outside list-disc">
               <li>
                 {t('auth.tips.reset3')}
-                <Text code={true}>admin/admin</Text>
+                <Text code={true}>{t('auth.tips.webAccount')}</Text>
               </li>
               <li>
                 {t('auth.tips.reset4')}
-                <Text code={true}>root/root</Text>
+                <Text code={true}>{t('auth.tips.sshAccount')}</Text>
               </li>
             </ul>
           </div>

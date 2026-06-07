@@ -5,7 +5,7 @@ type GetImagesRsp struct {
 }
 
 type MountImageReq struct {
-	File  string `json:"file" validate:"omitempty"`
+	File  string `json:"file" validate:"omitempty,startswith=/data,filepath"`
 	Cdrom bool   `json:"cdrom" validate:"omitempty"`
 }
 
@@ -18,5 +18,5 @@ type GetCdRomRsp struct {
 }
 
 type DeleteImageReq struct {
-	File string `json:"file" validate:"required"`
+	File string `json:"file" validate:"required,startswith=/data,filepath"`
 }
