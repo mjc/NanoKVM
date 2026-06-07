@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input } from 'antd';
 import { useTranslation } from 'react-i18next';
@@ -6,19 +6,12 @@ import { useNavigate } from 'react-router-dom';
 
 import * as api from '@/api/auth.ts';
 import { removeToken } from '@/lib/cookie.ts';
-import { encrypt } from '@/lib/encrypt.ts';
 import { Head } from '@/components/head.tsx';
 
 export const Password = () => {
   const { t } = useTranslation();
   const [msg, setMsg] = useState('');
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (msg) {
-      setTimeout(() => setMsg(''), 3000);
-    }
-  }, [msg]);
 
   function changePassword(values: any) {
     if (values.password !== values.password2) {
@@ -30,15 +23,14 @@ export const Password = () => {
       return;
     }
     if (!validateString(values.password)) {
-      setMsg('auth.illegalPassword');
+      setMsg(t('auth.illegalPassword'));
       return;
     }
 
-    const username = values.username;
-    const password = encrypt(values.password);
+    const username = values.username.trim();
 
     api
-      .changePassword(username, password)
+      .changePassword(username, values.oldPassword, values.password)
       .then((rsp: any) => {
         if (rsp.code !== 0) {
           setMsg(t('auth.error'));
@@ -54,12 +46,12 @@ export const Password = () => {
   }
 
   function validateString(str: string) {
-    const regex = /['"\\/]/;
-    return !regex.test(str);
+    const hasControl = /[\x00-\x1f\x7f]/.test(str);
+    return str.trim() === str && !hasControl && new TextEncoder().encode(str).length <= 72;
   }
 
   function cancel() {
-    window.location.replace('/');
+    navigate('/', { replace: true });
   }
 
   return (
@@ -83,6 +75,17 @@ export const Password = () => {
 
           <Form.Item
             name="password"
+            rules={[{ required: true, message: t('auth.noEmptyPassword'), min: 1 }]}
+          >
+            <Input
+              prefix={<LockOutlined />}
+              type="password"
+              placeholder={t('auth.placeholderPassword')}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="oldPassword"
             rules={[{ required: true, message: t('auth.noEmptyPassword'), min: 1 }]}
           >
             <Input

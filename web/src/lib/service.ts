@@ -17,6 +17,9 @@ export function getPort(): string {
 
 export function getBaseUrl(type: 'http' | 'ws'): string {
   let protocol = window.location.protocol;
+  if (protocol === 'http:' && window.location.hostname !== 'localhost') {
+    protocol = 'https:';
+  }
   if (type === 'ws') {
     protocol = protocol === 'https:' ? 'wss:' : 'ws:';
   }
@@ -29,5 +32,8 @@ export function getBaseUrl(type: 'http' | 'ws'): string {
     ((protocol === 'https:' || protocol === 'wss:') && port === '443') ||
     ((protocol === 'http:' || protocol === 'ws:') && port === '80');
 
-  return isDefaultPort ? baseUrl : `${baseUrl}:${port}`;
+  if (isDefaultPort) {
+    return baseUrl;
+  }
+  return `${baseUrl}:${port}`;
 }

@@ -1,9 +1,10 @@
 import { http } from '@/lib/http';
+import { encrypt } from '@/lib/encrypt.ts';
 
 export function login(username: string, password: string) {
   const data = {
     username,
-    password
+    password: encrypt(password)
   };
   return http.post('/api/auth/login', data);
 }
@@ -16,10 +17,11 @@ export function getAccount() {
   return http.get('/api/auth/account');
 }
 
-export function changePassword(username: string, password: string) {
+export function changePassword(username: string, oldPassword: string, password: string) {
   const data = {
     username,
-    password
+    oldPassword: encrypt(oldPassword),
+    password: encrypt(password)
   };
   return http.post('/api/auth/password', data);
 }

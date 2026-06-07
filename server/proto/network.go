@@ -1,7 +1,7 @@
 package proto
 
 type WakeOnLANReq struct {
-	Mac string `form:"mac" validate:"required"`
+	Mac string `json:"mac" validate:"required,mac"`
 }
 
 type GetMacRsp struct {
@@ -9,12 +9,12 @@ type GetMacRsp struct {
 }
 
 type DeleteMacReq struct {
-	Mac string `form:"mac" validate:"required"`
+	Mac string `json:"mac" validate:"required,mac"`
 }
 
 type SetMacNameReq struct {
-	Mac  string `form:"mac" validate:"required"`
-	Name string `form:"name" validate:"required"`
+	Mac  string `json:"mac" validate:"required,mac"`
+	Name string `json:"name" validate:"required,max=64"`
 }
 
 type GetWifiRsp struct {
@@ -25,8 +25,8 @@ type GetWifiRsp struct {
 }
 
 type ConnectWifiReq struct {
-	Ssid     string `validate:"required"`
-	Password string `validate:"required"`
+	Ssid     string `json:"ssid" validate:"required"`
+	Password string `json:"password" validate:"required"`
 }
 
 type GetDNSRsp struct {
@@ -39,7 +39,7 @@ type GetDNSRsp struct {
 
 type SetDNSReq struct {
 	Mode    string   `json:"mode" validate:"required,oneof=manual dhcp"`
-	Servers []string `json:"servers"`
+	Servers []string `json:"servers" validate:"omitempty,dive,ip"`
 }
 
 type DNSInfo struct {

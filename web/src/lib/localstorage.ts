@@ -25,6 +25,28 @@ type ItemWithExpiry = {
   expiry: number;
 };
 
+function parseJSON<T>(value: string | null): T | null {
+  if (!value) return null;
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function allowlisted(value: string | null, allowed: readonly string[], fallback: string | null = null) {
+  return value && allowed.includes(value) ? value : fallback;
+}
+
+function setBooleanPreference(key: string, enabled: boolean) {
+  localStorage.setItem(key, enabled ? 'true' : 'false');
+}
+
 // set the value with expiration time (unit: milliseconds)
 function setWithExpiry(key: string, value: string, ttl: number) {
   const now = new Date();
@@ -42,7 +64,11 @@ function getWithExpiry(key: string) {
   const itemStr = localStorage.getItem(key);
   if (!itemStr) return null;
 
-  const item: ItemWithExpiry = JSON.parse(itemStr);
+  const item = parseJSON<ItemWithExpiry>(itemStr);
+  if (!item || typeof item.expiry !== 'number') {
+    localStorage.removeItem(key);
+    return null;
+  }
   const now = new Date();
   if (now.getTime() > item.expiry) {
     localStorage.removeItem(key);
@@ -61,11 +87,12 @@ export function setLanguage(language: string) {
 }
 
 export function getVideoMode() {
-  return localStorage.getItem(VIDEO_MODE_KEY);
+  return allowlisted(localStorage.getItem(VIDEO_MODE_KEY), ['mjpeg', 'h264', 'direct']);
 }
 
 export function setVideoMode(mode: string) {
-  localStorage.setItem(VIDEO_MODE_KEY, mode);
+  const safeMode = allowlisted(mode, ['mjpeg', 'h264', 'direct']);
+  if (safeMode) localStorage.setItem(VIDEO_MODE_KEY, safeMode);
 }
 
 export function getVideoScale(): number | null {
@@ -77,21 +104,25 @@ export function getVideoScale(): number | null {
 }
 
 export function setVideoScale(scale: number): void {
-  localStorage.setItem(VIDEO_SCALE_KEY, String(scale));
+  localStorage.setItem(VIDEO_SCALE_KEY, String(clampNumber(scale, 25, 300)));
 }
 
 export function getResolution(): Resolution | null {
   const resolution = localStorage.getItem(WEB_RESOLUTION_KEY);
   if (resolution) {
-    const obj = JSON.parse(window.atob(resolution));
-    return obj as Resolution;
+    const obj = parseJSON<Resolution>(resolution);
+    if (obj && Number.isFinite(obj.width) && Number.isFinite(obj.height)) {
+      return obj;
+    }
   }
 
   return null;
 }
 
 export function setResolution(resolution: Resolution) {
-  localStorage.setItem(WEB_RESOLUTION_KEY, window.btoa(JSON.stringify(resolution)));
+  if (Number.isFinite(resolution.width) && Number.isFinite(resolution.height)) {
+    localStorage.setItem(WEB_RESOLUTION_KEY, JSON.stringify(resolution));
+  }
 }
 
 export function getFps() {
@@ -100,7 +131,7 @@ export function getFps() {
 }
 
 export function setFps(fps: number) {
-  localStorage.setItem(FPS_KEY, String(fps));
+  localStorage.setItem(FPS_KEY, String(clampNumber(fps, 1, 60)));
 }
 
 export function getQuality() {
@@ -109,7 +140,7 @@ export function getQuality() {
 }
 
 export function setQuality(quality: number) {
-  localStorage.setItem(QUALITY_KEY, String(quality));
+  localStorage.setItem(QUALITY_KEY, String(clampNumber(quality, 1, 100)));
 }
 
 export function getGop() {
@@ -118,7 +149,7 @@ export function getGop() {
 }
 
 export function setGop(gop: number) {
-  localStorage.setItem(GOP_KEY, String(gop));
+  localStorage.setItem(GOP_KEY, String(clampNumber(gop, 1, 600)));
 }
 
 export function getFrameDetect(): boolean {
@@ -127,23 +158,37 @@ export function getFrameDetect(): boolean {
 }
 
 export function setFrameDetect(enabled: boolean) {
-  localStorage.setItem(FRAME_DETECT_KEY, String(enabled));
+  setBooleanPreference(FRAME_DETECT_KEY, enabled);
 }
 
 export function getMouseStyle() {
-  return localStorage.getItem(MOUSE_STYLE_KEY);
+  return allowlisted(localStorage.getItem(MOUSE_STYLE_KEY), [
+    'cursor-default',
+    'cursor-grab',
+    'cursor-cell',
+    'cursor-text',
+    'cursor-none'
+  ]);
 }
 
 export function setMouseStyle(mouse: string) {
-  localStorage.setItem(MOUSE_STYLE_KEY, mouse);
+  const safeMouse = allowlisted(mouse, [
+    'cursor-default',
+    'cursor-grab',
+    'cursor-cell',
+    'cursor-text',
+    'cursor-none'
+  ]);
+  if (safeMouse) localStorage.setItem(MOUSE_STYLE_KEY, safeMouse);
 }
 
 export function getMouseMode() {
-  return localStorage.getItem(MOUSE_MODE_KEY);
+  return allowlisted(localStorage.getItem(MOUSE_MODE_KEY), ['absolute', 'relative']);
 }
 
 export function setMouseMode(mouse: string) {
-  localStorage.setItem(MOUSE_MODE_KEY, mouse);
+  const safeMouse = allowlisted(mouse, ['absolute', 'relative']);
+  if (safeMouse) localStorage.setItem(MOUSE_MODE_KEY, safeMouse);
 }
 
 export function getMouseScrollDirection(): number | null {
@@ -155,7 +200,7 @@ export function getMouseScrollDirection(): number | null {
 }
 
 export function setMouseScrollDirection(direction: number): void {
-  localStorage.setItem(MOUSE_SCROLL_DIRECTION_KEY, String(direction));
+  localStorage.setItem(MOUSE_SCROLL_DIRECTION_KEY, String(clampNumber(direction, -1, 1)));
 }
 
 export function getMouseScrollInterval() {
@@ -164,7 +209,7 @@ export function getMouseScrollInterval() {
 }
 
 export function setMouseScrollInterval(interval: number): void {
-  localStorage.setItem(MOUSE_SCROLL_INTERVAL_KEY, String(interval));
+  localStorage.setItem(MOUSE_SCROLL_INTERVAL_KEY, String(clampNumber(interval, 10, 1000)));
 }
 
 export function getSkipUpdate() {
@@ -178,19 +223,21 @@ export function setSkipUpdate(skip: boolean) {
 }
 
 export function setKeyboardSystem(system: string) {
-  localStorage.setItem(KEYBOARD_SYSTEM_KEY, system);
+  const safeSystem = allowlisted(system, ['win', 'mac']);
+  if (safeSystem) localStorage.setItem(KEYBOARD_SYSTEM_KEY, safeSystem);
 }
 
 export function getKeyboardSystem() {
-  return localStorage.getItem(KEYBOARD_SYSTEM_KEY);
+  return allowlisted(localStorage.getItem(KEYBOARD_SYSTEM_KEY), ['win', 'mac']);
 }
 
 export function setKeyboardLanguage(language: string) {
-  localStorage.setItem(KEYBOARD_LANGUAGE_KEY, language);
+  const safeLanguage = allowlisted(language, ['en', 'fr', 'de', 'ru', 'ko', 'ja']);
+  if (safeLanguage) localStorage.setItem(KEYBOARD_LANGUAGE_KEY, safeLanguage);
 }
 
 export function getKeyboardLanguage() {
-  return localStorage.getItem(KEYBOARD_LANGUAGE_KEY);
+  return allowlisted(localStorage.getItem(KEYBOARD_LANGUAGE_KEY), ['en', 'fr', 'de', 'ru', 'ko', 'ja']);
 }
 
 export function setSkipModifyPassword(skip: boolean) {
@@ -204,22 +251,24 @@ export function getSkipModifyPassword() {
 }
 
 export function setMenuDisabledItems(items: string[]) {
-  const value = JSON.stringify(items);
-  localStorage.setItem(MENU_DISABLED_ITEMS_KEY, value);
+  const allowedItems = items.filter((item) => ['screen', 'mouse', 'keyboard'].includes(item));
+  localStorage.setItem(MENU_DISABLED_ITEMS_KEY, JSON.stringify(allowedItems));
 }
 
 export function getMenuDisabledItems(): string[] {
   const value = localStorage.getItem(MENU_DISABLED_ITEMS_KEY);
-  return value ? JSON.parse(value) : [];
+  const parsed = parseJSON<string[]>(value);
+  return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
 }
 
 export function getMenuDisplayMode(): string {
   const value = localStorage.getItem(MENU_AUTO_HIDE_KEY);
-  return value || 'auto';
+  return allowlisted(value, ['auto', 'always'], 'auto') || 'auto';
 }
 
 export function setMenuDisplayMode(mode: string) {
-  localStorage.setItem(MENU_AUTO_HIDE_KEY, mode);
+  const safeMode = allowlisted(mode, ['auto', 'always']);
+  if (safeMode) localStorage.setItem(MENU_AUTO_HIDE_KEY, safeMode);
 }
 
 export function getPowerConfirm() {
@@ -228,5 +277,5 @@ export function getPowerConfirm() {
 }
 
 export function setPowerConfirm(enabled: boolean) {
-  localStorage.setItem(POWER_CONFIRM_KEY, String(enabled));
+  setBooleanPreference(POWER_CONFIRM_KEY, enabled);
 }

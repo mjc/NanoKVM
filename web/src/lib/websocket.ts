@@ -1,5 +1,6 @@
 import { IMessageEvent, w3cwebsocket as W3cWebSocket } from 'websocket';
 
+import { getToken } from '@/lib/cookie.ts';
 import { getBaseUrl } from '@/lib/service.ts';
 
 type MessageHandler = (message: IMessageEvent) => void;
@@ -109,7 +110,9 @@ export class WsClient {
   private createConnection(): void {
     this.cleanup();
 
-    this.instance = new W3cWebSocket(this.options.url);
+    const token = getToken();
+    const protocol = token ? `token.${token}` : 'Sec-WebSocket-Protocol';
+    this.instance = new W3cWebSocket(this.options.url, protocol);
     this.instance.binaryType = 'arraybuffer';
 
     this.instance.onopen = this.handleOpen.bind(this);
@@ -128,8 +131,8 @@ export class WsClient {
     this.scheduleReconnect();
   }
 
-  private handleError(error: Error): void {
-    console.error('[WebSocket] Error:', error);
+  private handleError(): void {
+    console.error('[WebSocket] connection error');
   }
 
   private handleMessage(message: IMessageEvent): void {
@@ -140,8 +143,8 @@ export class WsClient {
       if (handlers) {
         handlers.forEach((handler) => handler(message));
       }
-    } catch (err) {
-      console.log(err);
+    } catch {
+      return;
     }
   }
 
