@@ -14,7 +14,7 @@ var (
 	upgrader = websocket.Upgrader{
 		WriteBufferSize: 256 * 1024,
 		CheckOrigin: func(r *http.Request) bool {
-			return true
+			return r.Header.Get("Origin") == ""
 		},
 	}
 )

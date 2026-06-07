@@ -5,8 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import * as api from '@/api/auth.ts';
-import { existToken, setToken } from '@/lib/cookie.ts';
-import { encrypt } from '@/lib/encrypt.ts';
+import { existToken } from '@/lib/cookie.ts';
 import { Head } from '@/components/head.tsx';
 
 import { Tips } from './tips.tsx';
@@ -35,26 +34,18 @@ export const Login = (): ReactElement => {
     setIsloading(true);
 
     const username = values.username;
-    const password = encrypt(values.password);
+    const password = values.password;
 
     api
       .login(username, password)
       .then((rsp: any) => {
         if (rsp.code !== 0) {
-          let errorMsg = t('auth.error');
-          if (rsp.code === -2) errorMsg = t('auth.invalidUser');
-          else if (rsp.code === -5) errorMsg = t('auth.locked');
-          else if (rsp.code === -4) errorMsg = t('auth.globalLocked');
-
-          setMsg(errorMsg);
+          setMsg(t('auth.error'));
           return;
         }
 
         setMsg('');
-        setToken(rsp.data.token);
-
         navigate('/', { replace: true });
-        window.location.reload();
       })
       .catch(() => {
         setMsg(t('auth.error'));

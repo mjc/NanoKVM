@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"net"
 	"net/http"
@@ -80,7 +81,9 @@ func hasValidLoopbackHTTPToken(req *http.Request) bool {
 	}
 
 	provided := req.Header.Get(config.PicoclawInternalTokenHeader)
-	return subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1
+	providedHash := sha256.Sum256([]byte(provided))
+	tokenHash := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare(providedHash[:], tokenHash[:]) == 1
 }
 
 func isLoopbackRemote(remoteAddr string) bool {

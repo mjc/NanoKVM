@@ -2,6 +2,7 @@ package proto
 
 import (
 	"os"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -20,7 +21,7 @@ func ValidateRequest(req interface{}) error {
 	}
 
 	if env == "" || env == "debug" {
-		log.Debugf("request: %+v\n", req)
+		log.Debugf("request type: %s", reflect.TypeOf(req))
 	}
 
 	return nil
@@ -40,7 +41,7 @@ func ParseQueryRequest(c *gin.Context, req interface{}) error {
 // ParseFormRequest Validates POST Requests.
 func ParseFormRequest(c *gin.Context, req interface{}) error {
 	var err error
-	if err = c.ShouldBind(req); err != nil {
+	if err = c.ShouldBindJSON(req); err != nil {
 		log.Errorf("parse request failed, err: %s", err)
 		return err
 	}

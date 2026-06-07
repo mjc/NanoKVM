@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { isPasswordUpdated } from '@/api/auth.ts';
-import { getSkipModifyPassword, setSkipModifyPassword } from '@/lib/localstorage.ts';
 
 export const Notification = () => {
   const { t } = useTranslation();
@@ -12,9 +11,6 @@ export const Notification = () => {
   const [api, contextHolder] = notification.useNotification();
 
   useEffect(() => {
-    const skip = getSkipModifyPassword();
-    if (skip) return;
-
     isPasswordUpdated().then((rsp) => {
       if (rsp.code === 0 && !rsp.data.isUpdated) {
         openNotification();
@@ -33,8 +29,7 @@ export const Notification = () => {
           {t('auth.ok')}
         </Button>
       ),
-      duration: null,
-      onClose: () => setSkipModifyPassword(true)
+      duration: null
     });
   }
 

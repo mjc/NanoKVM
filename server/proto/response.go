@@ -31,7 +31,7 @@ func (r *Response) Err(code int, msg string) {
 func (r *Response) OkRsp(c *gin.Context) {
 	r.Ok()
 
-	c.JSON(http.StatusOK, r)
+	c.JSON(200, r)
 }
 
 // OkRspWithData Successful response with data.
@@ -39,12 +39,12 @@ func (r *Response) OkRspWithData(c *gin.Context, data interface{}) {
 	r.Ok()
 	r.Data = data
 
-	c.JSON(http.StatusOK, r)
+	c.JSON(200, r)
 }
 
 // ErrRsp Failed response.
 func (r *Response) ErrRsp(c *gin.Context, code int, msg string) {
 	r.Err(code, msg)
 
-	c.JSON(http.StatusOK, r)
+	c.JSON(http.StatusBadRequest, r)
 }

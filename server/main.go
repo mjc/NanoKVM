@@ -66,7 +66,10 @@ func run() {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	if conf.Authentication == "disable" {
-		r.Use(cors.AllowAll())
+		r.Use(cors.New(cors.Options{
+			AllowedMethods: []string{"GET", "POST", "DELETE", "OPTIONS"},
+			AllowedHeaders: []string{"Content-Type"},
+		}))
 	}
 
 	router.Init(r)
