@@ -57,7 +57,8 @@ func getLatest() (*Latest, error) {
 
 	url := fmt.Sprintf("%s/latest.json?now=%d", baseURL, time.Now().Unix())
 
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: updateHTTPTimeout}
+	resp, err := client.Get(url)
 	if err != nil {
 		log.Debugf("failed to request version: %v", err)
 		return nil, err
@@ -66,7 +67,7 @@ func getLatest() (*Latest, error) {
 		_ = resp.Body.Close()
 	}()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		log.Errorf("failed to read response: %v", err)
 		return nil, err

@@ -5,9 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"os"
-	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +22,9 @@ import (
 )
 
 const (
-	maxTries = 3
+	maxTries              = 3
+	maxUpdatePackageBytes = 512 << 20
+	updateHTTPTimeout     = 30 * time.Second
 )
 
 func (s *Service) Update(c *gin.Context) {
@@ -41,12 +47,12 @@ func (s *Service) Update(c *gin.Context) {
 	// Sleep for a second before restarting the device
 	time.Sleep(1 * time.Second)
 
-	_ = exec.Command("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
+	_ = restartNanoKVM()
 }
 
 func update() error {
 	_ = os.RemoveAll(CacheDir)
-	_ = os.MkdirAll(CacheDir, 0o755)
+	_ = os.MkdirAll(CacheDir, 0o700)
 	defer func() {
 		_ = os.RemoveAll(CacheDir)
 	}()
@@ -58,7 +64,10 @@ func update() error {
 	}
 
 	// download
-	target := fmt.Sprintf("%s/%s", CacheDir, latest.Name)
+	target, err := safeCachePath(latest.Name)
+	if err != nil {
+		return err
+	}
 	if err := download(latest.Url, target); err != nil {
 		log.Errorf("download app failed: %s", err)
 		return err
@@ -80,6 +89,10 @@ func update() error {
 }
 
 func download(url string, target string) (err error) {
+	if err := validateUpdateURL(url); err != nil {
+		return err
+	}
+
 	for i := range maxTries {
 		log.Debugf("attempt #%d/%d", i+1, maxTries)
 		if i > 0 {
@@ -93,7 +106,6 @@ func download(url string, target string) (err error) {
 			continue
 		}
 
-		log.Debugf("update will be saved to: %s", target)
 		err = utils.Download(req, target)
 		if err != nil {
 			log.Errorf("downloading latest application failed, try again...")
@@ -125,9 +137,61 @@ func checksum(filePath string, expectedHash string) error {
 	hash := base64.StdEncoding.EncodeToString(hasher.Sum(nil))
 
 	if hash != expectedHash {
-		log.Errorf("invalid sha512 %s", hash)
-		return fmt.Errorf("invalid sha512 %s", hash)
+		log.Error("invalid sha512")
+		return fmt.Errorf("invalid sha512")
 	}
 
 	return nil
+}
+
+func safeCachePath(filename string) (string, error) {
+	if err := validateFilename(filename); err != nil {
+		return "", err
+	}
+
+	cacheDir := filepath.Clean(CacheDir)
+	target := filepath.Join(cacheDir, filename)
+	rel, err := filepath.Rel(cacheDir, target)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("invalid cache path")
+	}
+	return target, nil
+}
+
+func validateUpdateURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("update URL must use https")
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return fmt.Errorf("update URL missing host")
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && !isPublicIP(ip) {
+		return fmt.Errorf("update URL host is not public")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		addr, ok := netip.AddrFromSlice(ip)
+		if ok && !isPublicIP(addr) {
+			return fmt.Errorf("update URL host is not public")
+		}
+	}
+	return nil
+}
+
+func isPublicIP(ip netip.Addr) bool {
+	return ip.IsValid() &&
+		!ip.IsLoopback() &&
+		!ip.IsPrivate() &&
+		!ip.IsLinkLocalUnicast() &&
+		!ip.IsLinkLocalMulticast() &&
+		!ip.IsMulticast() &&
+		!ip.IsUnspecified()
 }

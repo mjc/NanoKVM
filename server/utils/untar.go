@@ -3,6 +3,7 @@ package utils
 import (
 	"archive/tar"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -51,16 +52,22 @@ func UnTarGz(srcFile string, destDir string) (string, error) {
 			}
 		}
 
-		filename := filepath.Join(destDir, header.Name)
+		filename, err := archiveTargetPath(destDir, header.Name)
+		if err != nil {
+			return "", err
+		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(filename, os.FileMode(header.Mode)); err != nil {
+			if err := os.MkdirAll(filename, 0o700); err != nil {
 				return "", err
 			}
 
 		case tar.TypeReg:
-			file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			if err := os.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+				return "", err
+			}
+			file, err := os.OpenFile(filename, os.O_CREATE|os.O_EXCL|os.O_RDWR, os.FileMode(header.Mode)&0o700)
 			if err != nil {
 				return "", err
 			}
@@ -72,11 +79,26 @@ func UnTarGz(srcFile string, destDir string) (string, error) {
 			_ = file.Close()
 
 		case tar.TypeSymlink:
-			if err := os.Symlink(header.Linkname, filename); err != nil {
-				return "", err
-			}
+			return "", fmt.Errorf("archive symlinks are not supported")
 		}
 	}
 
 	return targetFile, nil
+}
+
+func archiveTargetPath(destDir, name string) (string, error) {
+	if name == "" || filepath.IsAbs(name) {
+		return "", fmt.Errorf("invalid archive path")
+	}
+
+	cleanDest := filepath.Clean(destDir)
+	target := filepath.Join(cleanDest, filepath.Clean(name))
+	rel, err := filepath.Rel(cleanDest, target)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("archive path escapes destination")
+	}
+	return target, nil
 }
