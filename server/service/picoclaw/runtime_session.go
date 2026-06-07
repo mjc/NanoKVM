@@ -13,11 +13,16 @@ func (s *Service) ReleaseRuntimeSession(c *gin.Context) {
 		writePicoclawError(c, newPicoclawError(CodeSessionIDMissing, "missing X-PicoClaw-Session-ID"))
 		return
 	}
+	if !isValidPicoclawSessionID(sessionID) {
+		writePicoclawError(c, newPicoclawError(CodeInvalidAction, "invalid session id"))
+		return
+	}
 
 	if session, ok := GetSessionManager().Get(sessionID); ok {
 		s.closeGatewaySession(session, websocket.CloseNormalClosure, "session released")
 	} else {
-		ReleaseSession(sessionID)
+		writePicoclawError(c, newPicoclawError(CodeRuntimeUnavailable, "session not found"))
+		return
 	}
 
 	status := s.runtime.Get()

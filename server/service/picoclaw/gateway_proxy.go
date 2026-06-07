@@ -34,6 +34,13 @@ func (s *Service) ConnectGateway(c *gin.Context) {
 	if sessionID == "" {
 		sessionID = uuid.NewString()
 	}
+	if !isValidPicoclawSessionID(sessionID) {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"code":    CodeInvalidAction,
+			"message": "invalid session id",
+		})
+		return
+	}
 
 	if lockErr := s.lock.Ensure(sessionID); lockErr != nil {
 		c.AbortWithStatusJSON(http.StatusConflict, gin.H{

@@ -6,8 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
+
+	picoclawSecurity "NanoKVM-Server/service/picoclaw/security"
 )
 
 func (s *Service) startRuntime() (string, string, *PicoclawError) {
@@ -58,12 +59,11 @@ func (s *Service) startRuntime() (string, string, *PicoclawError) {
 		return "", "", newPicoclawError(CodeRuntimeStartFailed, err.Error())
 	}
 
-	command := scriptPath + " start"
 	ctx, cancel := context.WithTimeout(context.Background(), picoclawStartTimeout)
 	defer cancel()
 
-	output, execErr := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput()
-	trimmedOutput := strings.TrimSpace(string(output))
+	output, execErr := picoclawScriptCommand(ctx, scriptPath, "start").CombinedOutput()
+	trimmedOutput := picoclawSecurity.SanitizeRuntimeOutput(output)
 	if execErr != nil {
 		s.runtime.Update(func(status *RuntimeStatus) {
 			status.Ready = false
@@ -71,20 +71,20 @@ func (s *Service) startRuntime() (string, string, *PicoclawError) {
 			status.Status = "unavailable"
 			status.LastError = trimmedOutput
 			if status.LastError == "" {
-				status.LastError = execErr.Error()
+				status.LastError = "picoclaw command failed"
 			}
 			status.CheckedAt = time.Now()
 		})
-		return command, trimmedOutput, newPicoclawError(CodeRuntimeStartFailed, "failed to start picoclaw runtime")
+		return "", "", newPicoclawError(CodeRuntimeStartFailed, "failed to start picoclaw runtime")
 	}
 
 	time.Sleep(picoclawStartWaitPeriod)
 	if runtimeErr := s.waitForRuntimeReady(picoclawStartTimeout); runtimeErr != nil {
 		startErr := newPicoclawError(CodeRuntimeStartFailed, runtimeErr.Message)
-		return command, trimmedOutput, startErr
+		return "", "", startErr
 	}
 
-	return command, trimmedOutput, nil
+	return "", "", nil
 }
 
 func (s *Service) stopRuntime() (string, string, *PicoclawError) {
@@ -104,12 +104,11 @@ func (s *Service) stopRuntime() (string, string, *PicoclawError) {
 		return "", "", newPicoclawError(CodeRuntimeStartFailed, err.Error())
 	}
 
-	command := scriptPath + " stop"
 	ctx, cancel := context.WithTimeout(context.Background(), picoclawStopTimeout)
 	defer cancel()
 
-	output, execErr := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput()
-	trimmedOutput := strings.TrimSpace(string(output))
+	output, execErr := picoclawScriptCommand(ctx, scriptPath, "stop").CombinedOutput()
+	trimmedOutput := picoclawSecurity.SanitizeRuntimeOutput(output)
 	if execErr != nil {
 		status := RuntimeStatus{
 			Ready:           false,
@@ -122,10 +121,10 @@ func (s *Service) stopRuntime() (string, string, *PicoclawError) {
 			CheckedAt:       time.Now(),
 		}
 		if trimmedOutput == "" {
-			status.LastError = execErr.Error()
+			status.LastError = "picoclaw command failed"
 		}
 		s.runtime.Set(status)
-		return command, trimmedOutput, newPicoclawError(CodeRuntimeStartFailed, "failed to stop picoclaw runtime")
+		return "", "", newPicoclawError(CodeRuntimeStartFailed, "failed to stop picoclaw runtime")
 	}
 
 	time.Sleep(picoclawStopWaitPeriod)
@@ -140,7 +139,7 @@ func (s *Service) stopRuntime() (string, string, *PicoclawError) {
 		CurrentSession:  "",
 	})
 
-	return command, trimmedOutput, nil
+	return "", "", nil
 }
 
 func (s *Service) waitForRuntimeReady(timeout time.Duration) *PicoclawError {
@@ -183,20 +182,27 @@ func runPicoclawOnboard() (string, *PicoclawError) {
 		return "", newPicoclawError(CodeRuntimeUnavailable, err.Error())
 	}
 
-	command := scriptPath + " onboard"
 	ctx, cancel := context.WithTimeout(context.Background(), picoclawOnboardTimeout)
 	defer cancel()
 
-	output, execErr := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput()
-	trimmedOutput := strings.TrimSpace(string(output))
+	output, execErr := picoclawScriptCommand(ctx, scriptPath, "onboard").CombinedOutput()
+	trimmedOutput := picoclawSecurity.SanitizeRuntimeOutput(output)
 	if execErr != nil {
 		if trimmedOutput == "" {
-			trimmedOutput = execErr.Error()
+			trimmedOutput = "picoclaw command failed"
 		}
 		return trimmedOutput, newPicoclawError(CodeRuntimeUnavailable, "failed to initialize picoclaw config")
 	}
 
 	return trimmedOutput, nil
+}
+
+func picoclawScriptCommand(ctx context.Context, scriptPath string, action string) *exec.Cmd {
+	args, ok := picoclawSecurity.PicoclawScriptArgs(scriptPath, action)
+	if !ok {
+		return exec.CommandContext(ctx, "false")
+	}
+	return exec.CommandContext(ctx, args[0], args[1:]...)
 }
 
 func isPicoclawInstalled() (bool, error) {
