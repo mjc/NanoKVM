@@ -19,7 +19,7 @@ var gatewayUpgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return r.Header.Get("Origin") == ""
 	},
 }
 

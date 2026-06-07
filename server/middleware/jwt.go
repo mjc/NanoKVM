@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -15,6 +16,9 @@ type Token struct {
 	Username string `json:"username"`
 	jwt.RegisteredClaims
 }
+
+const minJWTSecretBytes = 10
+const maxJWTRefreshDuration = 24 * 60 * 60
 
 func CheckToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -50,19 +54,24 @@ func CheckTokenOrLoopbackInternalToken() gin.HandlerFunc {
 }
 
 func allowByToken(c *gin.Context) bool {
-	conf := config.GetInstance()
-
-	if conf.Authentication == "disable" {
-		return true
-	}
-
 	cookie, err := c.Cookie("nano-kvm-token")
 	if err != nil {
+		return false
+	}
+	if !originAllowed(c.Request) {
 		return false
 	}
 
 	_, err = ParseJWT(cookie)
 	return err == nil
+}
+
+func originAllowed(req *http.Request) bool {
+	origin := req.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	return origin == "https://"+req.Host || origin == "http://"+req.Host
 }
 
 func abortUnauthorized(c *gin.Context) {
@@ -72,13 +81,26 @@ func abortUnauthorized(c *gin.Context) {
 
 func GenerateJWT(username string) (string, error) {
 	conf := config.GetInstance()
+	if username == "" {
+		return "", errors.New("empty username")
+	}
+	if len(conf.JWT.SecretKey) < minJWTSecretBytes {
+		return "", errors.New("jwt signing secret is too short")
+	}
+	if conf.JWT.RefreshTokenDuration == 0 || conf.JWT.RefreshTokenDuration > maxJWTRefreshDuration {
+		return "", errors.New("invalid jwt refresh duration")
+	}
 
 	expireDuration := time.Duration(conf.JWT.RefreshTokenDuration) * time.Second
+	now := time.Now()
 
 	claims := Token{
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expireDuration)),
+			Subject:   username,
+			ExpiresAt: jwt.NewNumericDate(now.Add(expireDuration)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
 		},
 	}
 
@@ -89,8 +111,14 @@ func GenerateJWT(username string) (string, error) {
 
 func ParseJWT(jwtToken string) (*Token, error) {
 	conf := config.GetInstance()
+	if len(conf.JWT.SecretKey) < minJWTSecretBytes {
+		return nil, errors.New("jwt signing secret is too short")
+	}
 
 	t, err := jwt.ParseWithClaims(jwtToken, &Token{}, func(token *jwt.Token) (interface{}, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("unexpected jwt signing method")
+		}
 		return []byte(conf.JWT.SecretKey), nil
 	})
 	if err != nil {
@@ -99,6 +127,21 @@ func ParseJWT(jwtToken string) (*Token, error) {
 	}
 
 	if claims, ok := t.Claims.(*Token); ok && t.Valid {
+		if claims.Username == "" {
+			return nil, errors.New("empty username claim")
+		}
+		if claims.ExpiresAt == nil {
+			return nil, errors.New("missing expiration claim")
+		}
+		if claims.IssuedAt == nil {
+			return nil, errors.New("missing issued-at claim")
+		}
+		if claims.NotBefore == nil {
+			return nil, errors.New("missing not-before claim")
+		}
+		if claims.IssuedAt.After(time.Now()) {
+			return nil, errors.New("issued-at claim is in the future")
+		}
 		return claims, nil
 	} else {
 		return nil, err

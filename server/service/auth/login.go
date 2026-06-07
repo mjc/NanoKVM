@@ -14,63 +14,61 @@ import (
 func (s *Service) Login(c *gin.Context) {
 	var req proto.LoginReq
 	var rsp proto.Response
+	const loginFailureMessage = "authentication failed"
 
-	// authentication disabled
-	conf := config.GetInstance()
-	if conf.Authentication == "disable" {
-		rsp.OkRspWithData(c, &proto.LoginRsp{
-			Token: "disabled",
-		})
+	clientIP := GetClientIP(c)
+	recordFailure := RecordLoginFailure
+	if err := proto.ParseFormRequest(c, &req); err != nil {
+		time.Sleep(3 * time.Second)
+		recordFailure(LoginAttemptKey(clientIP, ""))
+		rsp.ErrRsp(c, -1, loginFailureMessage)
 		return
 	}
 
-	clientIP := GetClientIP(c)
-	if locked, code, msg := CheckLoginAttempt(clientIP); locked {
+	attemptKey := LoginAttemptKey(clientIP, req.Username)
+	if locked, code, msg := CheckLoginAttempt(attemptKey); locked {
 		time.Sleep(3 * time.Second)
 		rsp.ErrRsp(c, code, msg)
 		return
 	}
 
-	if err := proto.ParseFormRequest(c, &req); err != nil {
-		time.Sleep(3 * time.Second)
-		rsp.ErrRsp(c, -1, "invalid parameters")
+	// authentication disabled
+	conf := config.GetInstance()
+	if conf.Authentication == "disable" {
+		rsp.OkRsp(c)
 		return
 	}
 
 	if ok := CompareAccount(req.Username, req.Password); !ok {
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 
-		if locked, code, msg := RecordLoginFailure(clientIP); locked {
+		if locked, code, msg := RecordLoginFailure(attemptKey); locked {
 			rsp.ErrRsp(c, code, msg)
 			return
 		}
 
-		rsp.ErrRsp(c, -2, "invalid username or password")
+		rsp.ErrRsp(c, -2, loginFailureMessage)
 		return
 	}
 
-	ClearLoginAttempt(clientIP)
+	ClearLoginAttempt(attemptKey)
 
 	token, err := middleware.GenerateJWT(req.Username)
 	if err != nil {
-		time.Sleep(1 * time.Second)
+		time.Sleep(3 * time.Second)
 		rsp.ErrRsp(c, -3, "generate token failed")
 		return
 	}
 
-	rsp.OkRspWithData(c, &proto.LoginRsp{
-		Token: token,
-	})
+	c.SetCookie("nano-kvm-token", token, int(conf.JWT.RefreshTokenDuration), "/", "", conf.Proto == "https", true)
+	rsp.OkRspWithData(c, &proto.LoginRsp{})
 
 	log.Debugf("login success, username: %s", req.Username)
 }
 
 func (s *Service) Logout(c *gin.Context) {
-	conf := config.GetInstance()
-
-	if conf.JWT.RevokeTokensOnLogout {
-		config.RegenerateSecretKey()
-	}
+	config.RegenerateSecretKey()
+	c.SetCookie("nano-kvm-token", "", -1, "/", "", true, true)
 
 	var rsp proto.Response
 	rsp.OkRsp(c)

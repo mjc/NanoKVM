@@ -1,8 +1,8 @@
 package proto
 
 type LoginReq struct {
-	Username string `validate:"required"`
-	Password string `validate:"required"`
+	Username string `json:"username" validate:"required"`
+	Password string `json:"password" validate:"required"`
 }
 
 type LoginRsp struct {
@@ -14,8 +14,9 @@ type GetAccountRsp struct {
 }
 
 type ChangePasswordReq struct {
-	Username string `json:"username" validate:"required"`
-	Password string `json:"password" validate:"required"`
+	Username    string `json:"username" validate:"required"`
+	OldPassword string `json:"oldPassword" validate:"required"`
+	Password    string `json:"password" validate:"required"`
 }
 
 type IsPasswordUpdatedRsp struct {

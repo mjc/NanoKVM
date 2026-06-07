@@ -22,11 +22,11 @@ func (s *Service) SetTls(c *gin.Context) {
 		return
 	}
 
-	if req.Enabled {
-		err = enableTls()
-	} else {
-		err = disableTls()
+	if !req.Enabled {
+		rsp.ErrRsp(c, -2, "TLS downgrade is not supported")
+		return
 	}
+	err = enableTls()
 
 	if err != nil {
 		log.Errorf("failed to set TLS: %s", err)
@@ -52,21 +52,6 @@ func enableTls() error {
 	conf.Proto = "https"
 	conf.Cert.Crt = "/etc/kvm/server.crt"
 	conf.Cert.Key = "/etc/kvm/server.key"
-
-	if err := config.Write(conf); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func disableTls() error {
-	conf, err := config.Read()
-	if err != nil {
-		return err
-	}
-
-	conf.Proto = "http"
 
 	if err := config.Write(conf); err != nil {
 		return err

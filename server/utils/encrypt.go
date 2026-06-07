@@ -7,15 +7,15 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// SecretKey is only used to prevent the data from being transmitted in plaintext.
-const SecretKey = "nanokvm-sipeed-2024"
+// payloadEncryptionKey is only a compatibility wrapper for legacy encrypted payloads.
+const payloadEncryptionKey = "nanokvm-payload-compat-v2"
 
 func Decrypt(ciphertext string) (string, error) {
 	if ciphertext == "" {
 		return "", nil
 	}
 
-	decrypt := aes256.Decrypt(ciphertext, SecretKey)
+	decrypt := aes256.Decrypt(ciphertext, payloadEncryptionKey)
 	return decrypt, nil
 }
 

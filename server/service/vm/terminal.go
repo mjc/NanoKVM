@@ -27,7 +27,7 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  maxMessageSize,
 	WriteBufferSize: maxMessageSize,
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return r.Header.Get("Origin") == ""
 	},
 }
 

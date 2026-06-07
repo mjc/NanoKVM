@@ -1,13 +1,17 @@
 package auth
 
 import (
+	"NanoKVM-Server/config"
 	"NanoKVM-Server/proto"
 	"NanoKVM-Server/utils"
+	"context"
 	"errors"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -22,12 +26,26 @@ func (s *Service) ChangePassword(c *gin.Context) {
 		rsp.ErrRsp(c, -1, "invalid parameters")
 		return
 	}
+	req.Username = strings.TrimSpace(req.Username)
+	if !validAccountName(req.Username) {
+		rsp.ErrRsp(c, -2, "invalid username or password")
+		return
+	}
+	if !CompareAccount(req.Username, req.OldPassword) {
+		rsp.ErrRsp(c, -2, "invalid username or password")
+		return
+	}
 
 	password, err := utils.DecodeDecrypt(req.Password)
 	if err != nil || password == "" {
 		rsp.ErrRsp(c, -2, "invalid password")
 		return
 	}
+	if !validPassword(password) {
+		rsp.ErrRsp(c, -2, "invalid password")
+		return
+	}
+	previousAccount, _ := GetAccount()
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -43,11 +61,12 @@ func (s *Service) ChangePassword(c *gin.Context) {
 	// change root password
 	err = changeRootPassword(password)
 	if err != nil {
-		_ = DelAccount()
+		_ = restoreAccount(previousAccount)
 		rsp.ErrRsp(c, -5, "failed to change password")
 		return
 	}
 
+	config.RegenerateSecretKey()
 	rsp.OkRsp(c)
 	log.Debugf("change password success, username: %s", req.Username)
 }
@@ -68,7 +87,14 @@ func (s *Service) IsPasswordUpdated(c *gin.Context) {
 		return
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(account.Password), []byte("admin"))
+	if account.HashedPassword == "" {
+		if legacyPassword, legacyErr := utils.DecodeDecrypt(account.HashedPassword); legacyErr == nil && legacyPassword == "admin" {
+			rsp.OkRspWithData(c, &proto.IsPasswordUpdatedRsp{IsUpdated: false})
+			return
+		}
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(account.HashedPassword), []byte("admin"))
 
 	rsp.OkRspWithData(c, &proto.IsPasswordUpdatedRsp{
 		// If the hash is not valid, still assume it's not updated
@@ -89,7 +115,10 @@ func changeRootPassword(password string) error {
 }
 
 func passwd(password string) error {
-	cmd := exec.Command("passwd", "root")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "passwd", "root")
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -99,8 +128,8 @@ func passwd(password string) error {
 		_ = stdin.Close()
 	}()
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
 
 	if err = cmd.Start(); err != nil {
 		return err
@@ -109,8 +138,6 @@ func passwd(password string) error {
 	if _, err = io.WriteString(stdin, password+"\n"); err != nil {
 		return err
 	}
-
-	time.Sleep(100 * time.Millisecond)
 
 	if _, err = io.WriteString(stdin, password+"\n"); err != nil {
 		return err
@@ -121,4 +148,18 @@ func passwd(password string) error {
 	}
 
 	return nil
+}
+
+func validAccountName(username string) bool {
+	if username == "" || strings.ContainsAny(username, `/\`) {
+		return false
+	}
+	return !strings.ContainsFunc(username, unicode.IsControl)
+}
+
+func validPassword(password string) bool {
+	if len([]byte(password)) > 72 {
+		return false
+	}
+	return !strings.ContainsFunc(password, unicode.IsControl)
 }

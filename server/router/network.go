@@ -10,8 +10,9 @@ import (
 func networkRouter(r *gin.Engine) {
 	service := network.NewService()
 
-	r.POST("/api/network/wifi", service.ConnectWifiNoAuth)    // connect Wi-Fi without auth (only available in ap mode)
-	r.POST("/api/network/wifi/verify", service.VerifyApLogin) // verify ap login
+	ap := r.Group("/api/network").Use(middleware.CheckToken())
+	ap.POST("/wifi", service.ConnectWifiNoAuth)    // connect Wi-Fi without auth (only available in ap mode)
+	ap.POST("/wifi/verify", service.VerifyApLogin) // verify ap login
 
 	api := r.Group("/api").Use(middleware.CheckToken())
 

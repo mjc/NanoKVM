@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/sha256"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,15 +38,14 @@ func startCleanupRoutine() {
 
 	go func() {
 		ticker := time.NewTicker(cleanupInterval)
+		defer ticker.Stop()
 		for range ticker.C {
 			loginMutex.Lock()
 			now := time.Now()
 			for ip, attempt := range loginAttempts {
-				// Cleanup rules: if it has been locked and the lockout time has passed,
-				// or (although not locked) it has been 30 minutes since the last failure,
-				// remove this record
+				// Cleanup records after the configured lockout window elapses.
 				if (!attempt.lockoutEnd.IsZero() && now.After(attempt.lockoutEnd)) ||
-					(attempt.lockoutEnd.IsZero() && now.Sub(attempt.lastFailed) > 30*time.Minute) {
+					(attempt.lockoutEnd.IsZero() && now.Sub(attempt.lastFailed) > time.Duration(conf.Security.LoginLockoutDuration)*time.Second) {
 					delete(loginAttempts, ip)
 				}
 			}
@@ -56,10 +57,12 @@ func startCleanupRoutine() {
 // GetClientIP gets a reliable real IP
 func GetClientIP(c *gin.Context) string {
 	ip := c.RemoteIP()
-	if ip == "" {
-		ip = c.ClientIP()
-	}
 	return ip
+}
+
+func LoginAttemptKey(clientIP string, username string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(username)))
+	return clientIP + ":" + string(sum[:])
 }
 
 // CheckLoginAttempt checks if a login attempt is allowed based on brute-force protection rules.
@@ -107,8 +110,8 @@ func RecordLoginFailure(clientIP string) (bool, int, string) {
 	if !exists {
 		// When the record pool is full, clear the records instead of global lockout to prevent DDoS
 		if len(loginAttempts) >= maxLoginAttemptsRecords {
-			log.Warn("Login attempt records reached maximum limit, clearing records to prevent memory overflow")
-			loginAttempts = make(map[string]*loginAttempt)
+			log.Warn("Login attempt records reached maximum limit, refusing to add new record")
+			return true, -5, "Account locked due to too many failed attempts, please try again later"
 		}
 		attempt = &loginAttempt{}
 		loginAttempts[clientIP] = attempt
@@ -128,6 +131,7 @@ func RecordLoginFailure(clientIP string) (bool, int, string) {
 	if attempt.failures >= conf.Security.LoginMaxFailures {
 		attempt.lockoutEnd = now.Add(time.Duration(conf.Security.LoginLockoutDuration) * time.Second)
 		log.Debugf("login failures reached threshold for IP %s, locking out until %s", clientIP, attempt.lockoutEnd)
+		return true, -5, "Account locked due to too many failed attempts, please try again later"
 	}
 
 	return false, 0, ""

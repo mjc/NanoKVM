@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { CheckOutlined, KeyOutlined, LockOutlined, WifiOutlined } from '@ant-design/icons';
 import { Button, Form, Input } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
 
 import * as api from '@/api/network.ts';
 import { Head } from '@/components/head.tsx';
@@ -12,20 +11,12 @@ type VerifyState = '' | 'failed' | 'denied';
 
 export const Wifi = () => {
   const { t } = useTranslation();
-  const [searchParams] = useSearchParams();
 
   const [state, setState] = useState<State>('');
-  const [apPassword, setApPassword] = useState<string>('');
+  const apPasswordRef = useRef('');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [verifying, setVerifying] = useState<boolean>(false);
   const [verifyState, setVerifyState] = useState<VerifyState>('');
-
-  useEffect(() => {
-    const pass = searchParams.get('p') || searchParams.get('P');
-    if (pass) {
-      verifyPassword(pass);
-    }
-  }, []);
 
   async function verifyPassword(password: string) {
     if (verifying) return;
@@ -35,13 +26,12 @@ export const Wifi = () => {
     try {
       const rsp = await api.verifyApLogin(password);
       if (rsp?.code === 0) {
-        setApPassword(password);
+        apPasswordRef.current = password;
         setIsAuthenticated(true);
       } else {
         setVerifyState(rsp?.code === -1 ? 'denied' : 'failed');
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
       setVerifyState('failed');
     }
     setVerifying(false);
@@ -59,7 +49,7 @@ export const Wifi = () => {
     setState('loading');
 
     try {
-      const rsp = await api.connectWifiNoAuth(values.ssid, values.password, apPassword);
+      const rsp = await api.connectWifiNoAuth(values.ssid, values.password, apPasswordRef.current);
 
       switch (rsp?.code) {
         case 0:
@@ -74,11 +64,11 @@ export const Wifi = () => {
           setState('failed');
           return;
       }
-    } catch (err) {
-      console.log(err);
+    } catch {
+      setState('failed');
+      return;
     }
-
-    setState('success');
+    setState('failed');
   }
 
   if (!isAuthenticated) {

@@ -25,8 +25,8 @@ type GetWifiRsp struct {
 }
 
 type ConnectWifiReq struct {
-	Ssid     string `validate:"required"`
-	Password string `validate:"required"`
+	Ssid     string `json:"ssid" validate:"required"`
+	Password string `json:"password" validate:"required"`
 }
 
 type GetDNSRsp struct {

@@ -1,7 +1,7 @@
 package config
 
 var defaultConfig = &Config{
-	Proto: "http",
+	Proto: "https",
 	Host:  "",
 	Port: Port{
 		Http:  80,
@@ -17,7 +17,7 @@ var defaultConfig = &Config{
 	},
 	JWT: JWT{
 		SecretKey:            "",
-		RefreshTokenDuration: 2678400,
+		RefreshTokenDuration: 86400,
 		RevokeTokensOnLogout: true,
 	},
 	Stun: "stun.l.google.com:19302",
@@ -28,7 +28,7 @@ var defaultConfig = &Config{
 	},
 	Authentication: "enable",
 	Security: Security{
-		LoginLockoutDuration: 0,
+		LoginLockoutDuration: 300,
 		LoginMaxFailures:     5,
 	},
 }
@@ -37,10 +37,11 @@ func checkDefaultValue() {
 	if instance.JWT.SecretKey == "" {
 		instance.JWT.SecretKey = generateRandomSecretKey()
 		instance.JWT.RevokeTokensOnLogout = true
+		_ = Write(&instance)
 	}
 
 	if instance.JWT.RefreshTokenDuration == 0 {
-		instance.JWT.RefreshTokenDuration = 2678400
+		instance.JWT.RefreshTokenDuration = 86400
 	}
 
 	if instance.Stun == "" {

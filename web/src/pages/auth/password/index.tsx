@@ -6,7 +6,6 @@ import { useNavigate } from 'react-router-dom';
 
 import * as api from '@/api/auth.ts';
 import { removeToken } from '@/lib/cookie.ts';
-import { encrypt } from '@/lib/encrypt.ts';
 import { Head } from '@/components/head.tsx';
 
 export const Password = () => {
@@ -34,11 +33,10 @@ export const Password = () => {
       return;
     }
 
-    const username = values.username;
-    const password = encrypt(values.password);
+    const username = values.username.trim();
 
     api
-      .changePassword(username, password)
+      .changePassword(username, values.oldPassword, values.password)
       .then((rsp: any) => {
         if (rsp.code !== 0) {
           setMsg(t('auth.error'));
@@ -54,8 +52,8 @@ export const Password = () => {
   }
 
   function validateString(str: string) {
-    const regex = /['"\\/]/;
-    return !regex.test(str);
+    const hasControl = /[\x00-\x1f\x7f]/.test(str);
+    return str.trim() === str && !hasControl && new TextEncoder().encode(str).length <= 72;
   }
 
   function cancel() {
@@ -79,6 +77,17 @@ export const Password = () => {
             rules={[{ required: true, message: t('auth.noEmptyUsername'), min: 1 }]}
           >
             <Input prefix={<UserOutlined />} placeholder={t('auth.placeholderUsername')} />
+          </Form.Item>
+
+          <Form.Item
+            name="oldPassword"
+            rules={[{ required: true, message: t('auth.noEmptyPassword'), min: 1 }]}
+          >
+            <Input
+              prefix={<LockOutlined />}
+              type="password"
+              placeholder={t('auth.placeholderPassword')}
+            />
           </Form.Item>
 
           <Form.Item

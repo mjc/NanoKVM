@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"log"
-	"os"
 	"sync"
 
+	"NanoKVM-Server/utils"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
@@ -73,37 +73,19 @@ func readByDefault() error {
 // Create configuration file.
 func create() {
 	var (
-		file *os.File
 		data []byte
 		err  error
 	)
-
-	_ = os.MkdirAll("/etc/kvm", 0o644)
-
-	file, err = os.OpenFile("/etc/kvm/server.yaml", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		log.Printf("open config failed: %s", err)
-		return
-	}
-	defer func() {
-		_ = file.Close()
-	}()
 
 	if data, err = yaml.Marshal(defaultConfig); err != nil {
 		log.Printf("failed to marshal default config: %s", err)
 		return
 	}
 
-	if _, err = file.Write(data); err != nil {
-		log.Printf("failed to save config: %s", err)
+	if err = utils.WritePrivateFile("/etc/kvm/server.yaml", data); err != nil {
+		log.Printf("save config failed: %s", err)
 		return
 	}
-
-	if err = file.Sync(); err != nil {
-		log.Printf("failed to sync config: %s", err)
-		return
-	}
-
 	log.Println("create file /etc/kvm/server.yaml with default configuration")
 }
 
@@ -112,9 +94,6 @@ func validate() error {
 	if viper.GetInt("port.http") > 0 && viper.GetInt("port.https") > 0 {
 		return nil
 	}
-
-	_ = os.Remove("/etc/kvm/server.yaml")
-	log.Println("delete empty configuration file")
 
 	create()
 

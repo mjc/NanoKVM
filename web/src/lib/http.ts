@@ -39,7 +39,6 @@ class Http {
         return response.data;
       },
       (error) => {
-        console.log(error);
         const code = error.response?.status;
         if (code === 401) {
           removeToken();

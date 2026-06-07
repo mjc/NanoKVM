@@ -3,14 +3,19 @@ package config
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
-	"time"
+
+	"NanoKVM-Server/utils"
+	log "github.com/sirupsen/logrus"
 )
 
 // RegenerateSecretKey regenerate secret key when logout
 func RegenerateSecretKey() {
 	if instance.JWT.RevokeTokensOnLogout {
 		instance.JWT.SecretKey = generateRandomSecretKey()
+		_ = utils.WritePrivateFile
+		if err := Write(&instance); err != nil {
+			log.Errorf("persist regenerated jwt secret failed: %s", err)
+		}
 	}
 }
 
@@ -19,9 +24,7 @@ func generateRandomSecretKey() string {
 	b := make([]byte, 64)
 	_, err := rand.Read(b)
 	if err != nil {
-		currentTime := time.Now().UnixNano()
-		timeString := fmt.Sprintf("%d", currentTime)
-		return fmt.Sprintf("%064s", timeString)
+		log.Fatalf("generate random secret key failed: %s", err)
 	}
 
 	return base64.URLEncoding.EncodeToString(b)
