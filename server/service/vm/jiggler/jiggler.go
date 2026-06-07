@@ -42,18 +42,20 @@ func GetJiggler() *Jiggler {
 		}
 
 		mode := strings.ReplaceAll(string(content), "\n", "")
-		if mode != "" {
+		if isValidMode(mode) {
 			jiggler.mode = mode
+			jiggler.enabled = true
 		}
-
-		jiggler.enabled = true
 	})
 
 	return &jiggler
 }
 
 func (j *Jiggler) Enable(mode string) error {
-	err := os.WriteFile(ConfigFile, []byte(mode), 0644)
+	if !isValidMode(mode) {
+		return os.ErrInvalid
+	}
+	err := os.WriteFile(ConfigFile, []byte(mode), 0o600)
 	if err != nil {
 		return err
 	}
@@ -63,6 +65,10 @@ func (j *Jiggler) Enable(mode string) error {
 	j.Run()
 
 	return nil
+}
+
+func isValidMode(mode string) bool {
+	return mode == "relative" || mode == "absolute"
 }
 
 func (j *Jiggler) Disable() error {

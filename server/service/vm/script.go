@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,30 +51,30 @@ func (s *Service) UploadScript(c *gin.Context) {
 		return
 	}
 
-	if !isScript(header.Filename) {
+	scriptPath, cleanName, err := safeScriptPath(header.Filename)
+	if err != nil {
 		rsp.ErrRsp(c, -2, "invalid arguments")
 		return
 	}
 
 	if _, err = os.Stat(ScriptDirectory); err != nil {
-		_ = os.MkdirAll(ScriptDirectory, 0o755)
+		_ = os.MkdirAll(ScriptDirectory, 0o700)
 	}
 
-	target := fmt.Sprintf("%s/%s", ScriptDirectory, header.Filename)
-	err = c.SaveUploadedFile(header, target)
+	err = c.SaveUploadedFile(header, scriptPath)
 	if err != nil {
 		rsp.ErrRsp(c, -2, "save failed")
 		return
 	}
 
-	_ = utils.EnsurePermission(target, 0o100)
+	_ = utils.EnsurePermission(scriptPath, 0o500)
 
 	data := &proto.UploadScriptRsp{
-		File: header.Filename,
+		File: cleanName,
 	}
 	rsp.OkRspWithData(c, data)
 
-	log.Debugf("upload script %s success", header.Filename)
+	log.Debugf("upload script success")
 }
 
 func (s *Service) RunScript(c *gin.Context) {
@@ -87,41 +86,47 @@ func (s *Service) RunScript(c *gin.Context) {
 		return
 	}
 
-	command := fmt.Sprintf("%s/%s", ScriptDirectory, req.Name)
-
-	name := strings.ToLower(req.Name)
-	if strings.HasSuffix(name, ".py") {
-		command = fmt.Sprintf("python %s", command)
+	scriptPath, _, err := safeScriptPath(req.Name)
+	if err != nil {
+		rsp.ErrRsp(c, -1, "invalid arguments")
+		return
 	}
 
 	var output []byte
-	var err error
-	cmd := exec.Command("sh", "-c", command)
+	var cmd *exec.Cmd
+	if strings.HasSuffix(strings.ToLower(scriptPath), ".py") {
+		cmd = exec.Command("python", scriptPath)
+	} else {
+		cmd = exec.Command(scriptPath)
+	}
 
 	if req.Type == "foreground" {
 		output, err = cmd.CombinedOutput()
-	} else {
+	} else if req.Type == "background" {
 		cmd.Stdout = nil
 		cmd.Stderr = nil
 		go func() {
 			err := cmd.Run()
 			if err != nil {
-				log.Errorf("run script %s in background failed: %s", req.Name, err)
+				log.Errorf("run script in background failed: %s", err)
 			}
 		}()
+	} else {
+		rsp.ErrRsp(c, -1, "invalid arguments")
+		return
 	}
 
 	if err != nil {
-		log.Errorf("run script %s failed: %s", req.Name, err.Error())
+		log.Errorf("run script failed: %s", err.Error())
 		rsp.ErrRsp(c, -2, "run script failed")
 		return
 	}
 
 	rsp.OkRspWithData(c, &proto.RunScriptRsp{
-		Log: string(output),
+		Log: boundedScriptOutput(output),
 	})
 
-	log.Debugf("run script %s success", req.Name)
+	log.Debugf("run script success")
 }
 
 func (s *Service) DeleteScript(c *gin.Context) {
@@ -133,16 +138,41 @@ func (s *Service) DeleteScript(c *gin.Context) {
 		return
 	}
 
-	file := fmt.Sprintf("%s/%s", ScriptDirectory, req.Name)
+	file, _, err := safeScriptPath(req.Name)
+	if err != nil {
+		rsp.ErrRsp(c, -1, "invalid arguments")
+		return
+	}
 
 	if err := os.Remove(file); err != nil {
-		log.Errorf("delete script %s failed: %s", file, err)
+		log.Errorf("delete script failed: %s", err)
 		rsp.ErrRsp(c, -3, "delete failed")
 		return
 	}
 
 	rsp.OkRsp(c)
-	log.Debugf("delete script %s success", file)
+	log.Debugf("delete script success")
+}
+
+func safeScriptPath(name string) (string, string, error) {
+	cleanName := filepath.Base(name)
+	if cleanName != name || !isScript(cleanName) {
+		return "", "", os.ErrPermission
+	}
+	target := filepath.Join(ScriptDirectory, cleanName)
+	rel, err := filepath.Rel(ScriptDirectory, target)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", "", os.ErrPermission
+	}
+	return target, cleanName, nil
+}
+
+func boundedScriptOutput(output []byte) string {
+	const maxScriptOutput = 4096
+	if len(output) > maxScriptOutput {
+		output = output[:maxScriptOutput]
+	}
+	return string(output)
 }
 
 func isScript(name string) bool {
