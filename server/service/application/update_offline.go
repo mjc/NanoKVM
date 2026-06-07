@@ -5,7 +5,6 @@ import (
 	"io"
 	"mime/multipart"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -36,12 +35,12 @@ func (s *Service) OfflineUpdate(c *gin.Context) {
 	log.Debugf("offline update application success")
 
 	time.Sleep(1 * time.Second)
-	_ = exec.Command("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
+	_ = restartNanoKVM()
 }
 
 func offlineUpdate(c *gin.Context) error {
 	_ = os.RemoveAll(CacheDir)
-	_ = os.MkdirAll(CacheDir, 0o755)
+	_ = os.MkdirAll(CacheDir, 0o700)
 	defer func() {
 		_ = os.RemoveAll(CacheDir)
 	}()
@@ -126,25 +125,43 @@ func saveUploadedFile(part *multipart.Part, contentLength int64) (string, error)
 		return "", fmt.Errorf("no filename provided")
 	}
 
-	if err := validateFilename(filename); err != nil {
+	outPath, err := safeCachePath(filename)
+	if err != nil {
 		return "", err
 	}
 
-	outPath := filepath.Join(CacheDir, filename)
-	out, err := os.Create(outPath)
+	if err := copyUploadedFile(part, outPath, contentLength, maxUpdatePackageBytes); err != nil {
+		return "", err
+	}
+
+	return outPath, nil
+}
+
+func copyUploadedFile(part io.Reader, outPath string, contentLength int64, maxBytes int64) (err error) {
+	out, err := os.OpenFile(outPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return "", fmt.Errorf("failed to create output file: %w", err)
+		return fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer out.Close()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(outPath)
+		}
+	}()
 
 	pw := newProgressWriter(out, contentLength)
 	defer pw.Stop()
 
-	if _, err := io.Copy(pw, part); err != nil {
-		return "", fmt.Errorf("failed to write file: %w", err)
+	limited := &io.LimitedReader{R: part, N: maxBytes}
+	if _, err := io.Copy(pw, limited); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	probe := make([]byte, 1)
+	if n, probeErr := part.Read(probe); probeErr == nil || n > 0 {
+		return fmt.Errorf("uploaded file exceeds maximum size")
 	}
 
-	return outPath, nil
+	return nil
 }
 
 func validateFilename(filename string) error {
@@ -152,19 +169,19 @@ func validateFilename(filename string) error {
 
 	// Check if the path contains directory components
 	if baseName != filename {
-		log.Warnf("Path detected in filename: %s", filename)
+		log.Warn("Path detected in update filename")
 		return fmt.Errorf("path detected in filename")
 	}
 
 	// Check for path traversal attempts
 	if strings.Contains(filename, "..") {
-		log.Warnf("Path traversal attempt: %s", filename)
+		log.Warn("Path traversal attempt in update filename")
 		return fmt.Errorf("invalid filename: path traversal detected")
 	}
 
 	// Validate filename characters
 	if !validFilenameRegex.MatchString(filename) {
-		log.Warnf("Invalid filename characters: %s", filename)
+		log.Warn("Invalid update filename characters")
 		return fmt.Errorf("invalid filename: contains invalid characters")
 	}
 

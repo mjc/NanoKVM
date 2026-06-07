@@ -6,18 +6,25 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
 
-func Download(req *http.Request, target string) error {
-	log.Debugf("downloading %s to %s", req.URL.String(), target)
-	err := os.MkdirAll(filepath.Dir(target), 0o755)
-	if err != nil {
+const MaxDownloadBytes int64 = 512 << 20
+const downloadHTTPTimeout = 10 * time.Minute
+
+func Download(req *http.Request, target string) (err error) {
+	return downloadWithLimit(req, target, MaxDownloadBytes)
+}
+
+func downloadWithLimit(req *http.Request, target string, maxBytes int64) (err error) {
+	log.Debug("downloading file")
+	if err = os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		log.Errorf("create dir %s err: %s", filepath.Dir(target), err)
 		return err
 	}
-	out, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o755)
+	out, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		log.Errorf("cannot create file '%s', error: %s", target, err)
 		return err
@@ -25,8 +32,13 @@ func Download(req *http.Request, target string) error {
 	defer func() {
 		_ = out.Close()
 	}()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(target)
+		}
+	}()
 
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := (&http.Client{Timeout: downloadHTTPTimeout}).Do(req)
 	if err != nil {
 		log.Errorf("request error: %s", err)
 		return err
@@ -46,10 +58,15 @@ func Download(req *http.Request, target string) error {
 		return errors.New("unsupported content type")
 	}
 
-	_, err = io.Copy(out, resp.Body)
+	limited := &io.LimitedReader{R: resp.Body, N: maxBytes}
+	_, err = io.Copy(out, limited)
 	if err != nil {
 		log.Errorf("download file to %s err: %s", target, err)
 		return err
+	}
+	probe := make([]byte, 1)
+	if n, probeErr := resp.Body.Read(probe); probeErr == nil || n > 0 {
+		return errors.New("download exceeds maximum size")
 	}
 
 	return nil
