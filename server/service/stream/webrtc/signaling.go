@@ -55,7 +55,7 @@ func (s *SignalingHandler) HandleMessage(message *Message) error {
 	case "heartbeat":
 		return s.handleHeartbeat()
 	default:
-		log.Debugf("Unhandled message event: %s", message.Event)
+		log.Debugf("unhandled signaling message")
 		return nil
 	}
 }
@@ -69,7 +69,7 @@ func (s *SignalingHandler) handleVideoOffer(data string) error {
 
 	offer := webrtc.SessionDescription{}
 	if err := json.Unmarshal([]byte(data), &offer); err != nil {
-		log.Errorf("failed to unmarshal video offer: %s", err)
+		log.Errorf("failed to unmarshal video offer")
 		return err
 	}
 
@@ -116,7 +116,7 @@ func (s *SignalingHandler) updateHeaderExtensionID() error {
 	}
 
 	for _, ext := range params.HeaderExtensions {
-		if ext.URI == "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay" {
+		if ext.URI == playoutDelayURI {
 			s.client.track.playoutDelayExtensionID = uint8(ext.ID)
 			log.Debugf("found and set playout delay extension ID to: %d", ext.ID)
 			return nil
@@ -129,9 +129,13 @@ func (s *SignalingHandler) updateHeaderExtensionID() error {
 
 // handle video candidate
 func (s *SignalingHandler) handleVideoCandidate(data string) error {
+	if len(data) > 4096 {
+		return errors.New("candidate too large")
+	}
 	candidate := webrtc.ICECandidateInit{}
-	if err := json.Unmarshal([]byte(data), &candidate); err != nil {
-		log.Errorf("failed to unmarshal candidate: %s", err)
+	candidateBytes := []byte(data)
+	if err := json.Unmarshal(candidateBytes, &candidate); err != nil {
+		log.Errorf("failed to unmarshal candidate")
 		return err
 	}
 

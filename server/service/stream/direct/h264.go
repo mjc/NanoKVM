@@ -27,17 +27,17 @@ func Connect(c *gin.Context) {
 	}
 	defer func() {
 		_ = ws.Close()
-		log.Debugf("h264 websocket disconnected: %s", ws.RemoteAddr())
+		log.Debugf("h264 websocket disconnected")
 	}()
-	log.Debugf("h264 websocket connected: %s", ws.RemoteAddr())
+	log.Debugf("h264 websocket connected")
 
-	_ = ws.SetReadDeadline(time.Time{})
+	_ = ws.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 	streamer.addClient(ws)
 	defer streamer.removeClient(ws)
 
 	for {
-		if _, _, err := ws.NextReader(); err != nil {
+		if _, _, err := ws.ReadMessage(); err != nil {
 			log.Debugf("failed to read message (client disconnected): %s", err)
 			return
 		}

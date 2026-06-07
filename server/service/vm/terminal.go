@@ -34,23 +34,27 @@ var upgrader = websocket.Upgrader{
 func (s *Service) Terminal(c *gin.Context) {
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Errorf("failed to init websocket: %s", err)
+		log.Errorf("failed to init websocket")
 		return
 	}
 	defer func() {
 		_ = ws.Close()
 	}()
 
-	cmd := exec.Command("/bin/sh")
-	ptmx, err := pty.Start(cmd)
+	cmd := exec.Command("/bin/login")
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
-		log.Errorf("failed to start pty: %s", err)
+		log.Errorf("failed to start pty")
 		return
 	}
 	defer func() {
 		_ = ptmx.Close()
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		if cmd.Process != nil {
+			_ = cmd.Process.Signal(os.Interrupt)
+		}
+		if err := cmd.Wait(); err != nil {
+			log.Debug("terminal process exited")
+		}
 	}()
 
 	go wsWrite(ws, ptmx)
@@ -81,8 +85,7 @@ func wsWrite(ws *websocket.Conn, ptmx *os.File) {
 
 // ws to pty
 func wsRead(ws *websocket.Conn, ptmx *os.File) {
-	var zeroTime time.Time
-	_ = ws.SetReadDeadline(zeroTime)
+	_ = ws.SetReadDeadline(time.Now().Add(messageWait))
 
 	for {
 		msgType, p, err := ws.ReadMessage()
@@ -90,22 +93,33 @@ func wsRead(ws *websocket.Conn, ptmx *os.File) {
 			return
 		}
 
-		// resize message
-		if msgType == websocket.BinaryMessage {
+		switch msgType {
+		case websocket.BinaryMessage:
 			var winSize WinSize
 			if err := json.Unmarshal(p, &winSize); err == nil {
+				rows := clampTerminalDimension(winSize.Rows, 1, 200)
+				cols := clampTerminalDimension(winSize.Cols, 1, 300)
 				_ = pty.Setsize(ptmx, &pty.Winsize{
-					Rows: winSize.Rows,
-					Cols: winSize.Cols,
+					Rows: rows,
+					Cols: cols,
 				})
 			}
 			continue
 		}
 
-		_, err = ptmx.Write(p)
-		if err != nil {
-			log.Errorf("failed to write to pty: %s", err)
+		if _, writeErr := ptmx.Write(p); writeErr != nil {
+			log.Errorf("failed to write to pty")
 			return
 		}
 	}
+}
+
+func clampTerminalDimension(value uint16, min uint16, max uint16) uint16 {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }

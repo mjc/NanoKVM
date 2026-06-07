@@ -67,7 +67,7 @@ func (s *Service) GetDNS(c *gin.Context) {
 		DHCP:      dhcp,
 		Info:      info,
 	})
-	log.Debugf("get dns config: mode=%s servers=%v effective=%v dhcp=%v info=%+v", mode, servers, effective, dhcp, info)
+	log.Debugf("get dns config")
 }
 
 func (s *Service) SetDNS(c *gin.Context) {
@@ -100,7 +100,7 @@ func (s *Service) SetDNS(c *gin.Context) {
 	_ = exec.Command("sync").Run()
 
 	rsp.OkRsp(c)
-	log.Debugf("set dns config: mode=%s servers=%v", req.Mode, req.Servers)
+	log.Debugf("set dns config")
 }
 
 func setManualDNS(servers []string) error {
@@ -118,7 +118,7 @@ func setManualDNS(servers []string) error {
 		}
 	}
 
-	if err := os.MkdirAll(dnsConfigDir, 0o755); err != nil {
+	if err := os.MkdirAll(dnsConfigDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create dns config directory: %w", err)
 	}
 
@@ -126,7 +126,7 @@ func setManualDNS(servers []string) error {
 		return err
 	}
 
-	if err := os.WriteFile(dnsServersFile, []byte(strings.Join(normalized, "\n")+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(dnsServersFile, []byte(strings.Join(normalized, "\n")+"\n"), 0o600); err != nil {
 		return fmt.Errorf("failed to write dns servers: %w", err)
 	}
 
@@ -150,7 +150,7 @@ func setDHCPDNS() error {
 		return fmt.Errorf("no dhcp dns is currently available")
 	}
 
-	if err := os.MkdirAll(dnsConfigDir, 0o755); err != nil {
+	if err := os.MkdirAll(dnsConfigDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create dns config directory: %w", err)
 	}
 
@@ -220,15 +220,11 @@ func canFallbackEffectiveForDHCP() bool {
 }
 
 func defaultDNSMode() string {
-	if _, err := os.Stat(bootResolvFile); err == nil {
-		return dnsModeManual
-	}
-
 	return dnsModeDHCP
 }
 
 func writeDNSMode(mode string) error {
-	if err := os.WriteFile(dnsModeFile, []byte(mode+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(dnsModeFile, []byte(mode+"\n"), 0o600); err != nil {
 		return fmt.Errorf("failed to write dns mode: %w", err)
 	}
 
@@ -257,7 +253,7 @@ func preserveManualDNSServers() error {
 		return nil
 	}
 
-	if err := os.WriteFile(dnsServersFile, []byte(strings.Join(servers, "\n")+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(dnsServersFile, []byte(strings.Join(servers, "\n")+"\n"), 0o600); err != nil {
 		return fmt.Errorf("failed to preserve manual dns servers: %w", err)
 	}
 
@@ -520,11 +516,11 @@ func renderResolvConfig(path string, config resolvConfig) error {
 		builder.WriteString("\n")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("failed to create dns file directory: %w", err)
 	}
 
-	if err := os.WriteFile(path, []byte(builder.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(builder.String()), 0o600); err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
 
@@ -579,12 +575,15 @@ func normalizeSearchDomains(domains []string) []string {
 		if domain == "" {
 			continue
 		}
+		if _, err := net.LookupHost(domain); err != nil && !strings.Contains(domain, ".") {
+			continue
+		}
 		if _, exists := seen[domain]; exists {
 			continue
 		}
 
 		seen[domain] = struct{}{}
-		normalized = append(normalized, domain)
+		normalized = append(normalized, strings.ToLower(domain))
 	}
 
 	return normalized
@@ -618,11 +617,11 @@ func backupAndRemoveBootResolv() error {
 		return fmt.Errorf("failed to read boot resolv: %w", err)
 	}
 
-	if err := os.WriteFile(bootResolvBackup, data, 0o644); err != nil {
+	if err := os.WriteFile(bootResolvBackup, data, 0o600); err != nil {
 		return fmt.Errorf("failed to backup boot resolv: %w", err)
 	}
 
-	if err := os.Remove(bootResolvFile); err != nil && !os.IsNotExist(err) {
+	if err := os.Rename(bootResolvFile, bootResolvFile+".disabled"); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove boot resolv: %w", err)
 	}
 
@@ -634,7 +633,7 @@ func installUDHCPCDNSHook() error {
 		return fmt.Errorf("failed to create udhcpc hook directory: %w", err)
 	}
 
-	if err := os.WriteFile(udhcpcHookFile, []byte(udhcpcDNSHook), 0o755); err != nil {
+	if err := os.WriteFile(udhcpcHookFile, []byte(udhcpcDNSHook), 0o700); err != nil {
 		return fmt.Errorf("failed to install udhcpc dns hook: %w", err)
 	}
 

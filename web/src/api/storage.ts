@@ -13,10 +13,10 @@ export function getMountedImage() {
 // mount/unmount image
 export function mountImage(file?: string, cdrom?: boolean) {
   const data = {
-    file: file ? file : '',
+    imageId: file ? file : '',
     cdrom: cdrom
   };
-  return http.post('/api/storage/image/mount', data);
+  return http.request({ method: 'post', url: '/api/storage/image/mount', data });
 }
 
 // get CD-ROM flag
@@ -26,7 +26,7 @@ export function getCdRom() {
 
 export function deleteImage(file: string) {
   const data = {
-    file
+    imageId: file
   };
-  return http.post('/api/storage/image/delete', data);
+  return http.request({ method: 'post', url: '/api/storage/image/delete', data });
 }

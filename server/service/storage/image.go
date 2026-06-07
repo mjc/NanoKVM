@@ -3,11 +3,9 @@ package storage
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -18,7 +16,7 @@ import (
 
 const (
 	imageDirectory = "/data"
-	imageNone      = "/dev/mmcblk0p3"
+	imageNone      = ""
 	cdromFlag      = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/cdrom"
 	mountDevice    = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/file"
 	inquiryString  = "/sys/kernel/config/usb_gadget/g0/functions/mass_storage.disk0/lun.0/inquiry_string"
@@ -37,7 +35,10 @@ func (s *Service) GetImages(c *gin.Context) {
 		if !info.IsDir() {
 			name := strings.ToLower(info.Name())
 			if strings.HasSuffix(name, ".iso") || strings.HasSuffix(name, ".img") {
-				images = append(images, path)
+				rel, relErr := filepath.Rel(imageDirectory, path)
+				if relErr == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+					images = append(images, rel)
+				}
 			}
 		}
 
@@ -73,21 +74,21 @@ func (s *Service) MountImage(c *gin.Context) {
 		}
 
 		// unmount
-		if err := os.WriteFile(mountDevice, []byte("\n"), 0o666); err != nil {
+		if err := os.WriteFile(mountDevice, []byte("\n"), 0o644); err != nil {
 			log.Errorf("unmount file failed: %s", err)
 			rsp.ErrRsp(c, -2, "unmount image failed")
 			return
 		}
 
 		// ro flag
-		if err := os.WriteFile(roFlag, []byte(flag), 0o666); err != nil {
+		if err := os.WriteFile(roFlag, []byte(flag), 0o644); err != nil {
 			log.Errorf("set ro flag failed: %s", err)
 			rsp.ErrRsp(c, -2, "set ro flag failed")
 			return
 		}
 
 		// cdrom flag
-		if err := os.WriteFile(cdromFlag, []byte(flag), 0o666); err != nil {
+		if err := os.WriteFile(cdromFlag, []byte(flag), 0o644); err != nil {
 			log.Errorf("set cdrom flag failed: %s", err)
 			rsp.ErrRsp(c, -2, "set cdrom flag failed")
 			return
@@ -102,19 +103,23 @@ func (s *Service) MountImage(c *gin.Context) {
 	}
 	inquiryData := fmt.Sprintf("%-8s%-16s%04x", inquiryVen, inquiryPrd, inquiryVer)
 
-	if err := os.WriteFile(inquiryString, []byte(inquiryData), 0o666); err != nil {
+	if err := os.WriteFile(inquiryString, []byte(inquiryData), 0o644); err != nil {
 		log.Errorf("set inquiry %s failed: %s", inquiryData, err)
 		rsp.ErrRsp(c, -2, "set inquiry failed")
 		return
 	}
 
 	// mount
-	image := req.File
+	image, err := safeImagePath(req.File)
+	if err != nil {
+		rsp.ErrRsp(c, -2, "invalid arguments")
+		return
+	}
 	if image == "" {
 		image = imageNone
 	}
 
-	if err := os.WriteFile(mountDevice, []byte(image), 0o666); err != nil {
+	if err := os.WriteFile(mountDevice, []byte(image), 0o644); err != nil {
 		log.Errorf("mount file %s failed: %s", image, err)
 		rsp.ErrRsp(c, -2, "mount image failed")
 		return
@@ -129,22 +134,22 @@ func (s *Service) MountImage(c *gin.Context) {
 	}()
 
 	// reset usb
-	commands := []string{
-		"echo > /sys/kernel/config/usb_gadget/g0/UDC",
-		"ls /sys/class/udc/ | cat > /sys/kernel/config/usb_gadget/g0/UDC",
+	if err := os.WriteFile("/sys/kernel/config/usb_gadget/g0/UDC", []byte(""), 0o644); err != nil {
+		rsp.ErrRsp(c, -2, "execute command failed")
+		return
 	}
-
-	for _, command := range commands {
-		err := exec.Command("sh", "-c", command).Run()
-		if err != nil {
-			rsp.ErrRsp(c, -2, "execute command failed")
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+	udcs, err := os.ReadDir("/sys/class/udc")
+	if err != nil || len(udcs) == 0 {
+		rsp.ErrRsp(c, -2, "execute command failed")
+		return
+	}
+	if err := os.WriteFile("/sys/kernel/config/usb_gadget/g0/UDC", []byte(udcs[0].Name()), 0o644); err != nil {
+		rsp.ErrRsp(c, -2, "execute command failed")
+		return
 	}
 
 	rsp.OkRsp(c)
-	log.Debugf("mount image %s success", req.File)
+	log.Debugf("mount image success")
 }
 
 func (s *Service) GetMountedImage(c *gin.Context) {
@@ -200,21 +205,44 @@ func (s *Service) DeleteImage(c *gin.Context) {
 		return
 	}
 
-	filename := strings.ToLower(req.File)
-	validPrefix := strings.HasPrefix(filename, imageDirectory)
+	filename, pathErr := safeImagePath(req.File)
+	if pathErr != nil {
+		rsp.ErrRsp(c, -2, "invalid arguments")
+		return
+	}
 	validSuffix := strings.HasSuffix(filename, ".iso") || strings.HasSuffix(filename, ".img")
 
-	if !validPrefix || !validSuffix {
+	if !validSuffix {
 		rsp.ErrRsp(c, -2, "invalid arguments")
 		return
 	}
 
-	if err := os.Remove(req.File); err != nil {
+	if err := os.Remove(filename); err != nil {
 		rsp.ErrRsp(c, -3, "remove file failed")
-		log.Errorf("failed to remove file %s: %s", req.File, err)
+		log.Errorf("failed to remove image: %s", err)
 		return
 	}
 
 	rsp.OkRsp(c)
-	log.Debugf("delete image %s success", req.File)
+	log.Debugf("delete image success")
+}
+
+func safeImagePath(name string) (string, error) {
+	if name == "" {
+		return "", nil
+	}
+	clean := filepath.Clean(name)
+	if filepath.IsAbs(clean) {
+		rel, err := filepath.Rel(imageDirectory, clean)
+		if err != nil {
+			return "", err
+		}
+		clean = rel
+	}
+	target := filepath.Join(imageDirectory, clean)
+	rel, err := filepath.Rel(imageDirectory, target)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return "", os.ErrPermission
+	}
+	return target, nil
 }

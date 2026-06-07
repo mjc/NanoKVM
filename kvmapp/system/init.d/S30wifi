@@ -2,25 +2,25 @@
 
 . /etc/profile
 
-APFLAG_FILE=/tmp/wifiap
+APFLAG_FILE=/run/nanokvm/wifiap
 
 gen_hostapd_conf() {
     ssid="${1}"
     pass="${2}"
     echo "ctrl_interface=/var/run/hostapd"
     echo "ctrl_interface_group=0"
-    echo "ssid=${ssid}"
+    printf '%s\n' "ssid=${ssid}"
     echo "hw_mode=g"
     echo "channel=1"
     echo "beacon_int=100"
     echo "dtim_period=2"
-    echo "max_num_sta=255"
+    echo "max_num_sta=8"
     echo "rts_threshold=-1"
     echo "fragm_threshold=-1"
     echo "macaddr_acl=0"
     echo "auth_algs=3"
     echo "wpa=2"
-    echo "wpa_passphrase=${pass}"
+    printf '%s\n' "wpa_passphrase=${pass}"
     echo "ieee80211n=1"
 }
 
@@ -33,7 +33,7 @@ gen_udhcpd_conf() {
     echo "pidfile /var/run/udhcpd.${interface}.pid"
     echo "lease_file /var/lib/misc/udhcpd.${interface}.leases"
     echo "option subnet 255.255.255.0"
-    echo "option lease 864000"
+    echo "option lease 600"
 }
 
 gen_dnsmasq_conf() {
@@ -55,22 +55,25 @@ start() {
     if [ -e /boot/wifi.ssid ] && [ -e /boot/wifi.pass ]; then
         echo "Updating WiFi credentials from /boot to /etc/kvm/"
 
-        rm -f /etc/kvm/wifi.ssid /etc/kvm/wifi.pass
-
-        mv /boot/wifi.ssid /etc/kvm/wifi.ssid
-        mv /boot/wifi.pass /etc/kvm/wifi.pass
+        install -m 0644 -o root -g root /boot/wifi.ssid /etc/kvm/wifi.ssid
+        install -m 0600 -o root -g root /boot/wifi.pass /etc/kvm/wifi.pass
 
         chown root:root /etc/kvm/wifi.ssid /etc/kvm/wifi.pass
-        chmod 644 /etc/kvm/wifi.ssid /etc/kvm/wifi.pass
+        chmod 644 /etc/kvm/wifi.ssid
+        chmod 600 /etc/kvm/wifi.pass
     fi
     if [ -e /etc/kvm/wifi.ssid ]; then
-        ssid=$(cat /etc/kvm/wifi.ssid)
+        ssid=$(sed -n '1p' /etc/kvm/wifi.ssid)
     fi
     if [ -e /etc/kvm/wifi.pass ]; then
-        pass=$(cat /etc/kvm/wifi.pass)
+        pass=$(sed -n '1p' /etc/kvm/wifi.pass)
     fi
-    echo "ctrl_interface=/var/run/wpa_supplicant" >/etc/wpa_supplicant.conf
-    wpa_passphrase "$ssid" "$pass" >>/etc/wpa_supplicant.conf
+    wpa_tmp="$(mktemp /etc/wpa_supplicant.conf.XXXXXX)"
+    echo "ctrl_interface=/var/run/wpa_supplicant" >"$wpa_tmp"
+    wpa_passphrase "$ssid" "$pass" >>"$wpa_tmp"
+    chmod 600 "$wpa_tmp"
+    mv "$wpa_tmp" /etc/wpa_supplicant.conf
+    chmod 600 /etc/wpa_supplicant.conf
     wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf
     if [ ! -e /boot/wifi.nodhcp ]; then
         (udhcpc -i wlan0 -t 10 -T 1 -A 5 -b -p /run/udhcpc.wlan0.pid) &
@@ -96,9 +99,13 @@ ap_start() {
         ssid=$(cat /kvmapp/kvm/ap.ssid)
     fi
     if [ -e /kvmapp/kvm/ap.pass ]; then
-        pass=$(cat /kvmapp/kvm/ap.pass)
+        pass=$(sed -n '1p' /kvmapp/kvm/ap.pass)
     fi
-    gen_hostapd_conf "$ssid" "$pass" >/etc/hostapd.conf
+    hostapd_tmp="$(mktemp /etc/hostapd.conf.XXXXXX)"
+    gen_hostapd_conf "$ssid" "$pass" >"$hostapd_tmp"
+    chmod 600 "$hostapd_tmp"
+    mv "$hostapd_tmp" /etc/hostapd.conf
+    chmod 600 /etc/hostapd.conf
     ipv4_prefix=10.$id3.$id2
     if [ ! -e /etc/udhcpd.wlan0.conf ]; then
         gen_udhcpd_conf wlan0 "${ipv4_prefix}" >/etc/udhcpd.wlan0.conf
@@ -113,40 +120,51 @@ ap_start() {
     # iptables -t nat -A PREROUTING -i wlan0 -p udp --dport 53 -j DNAT --to ${ipv4_prefix}.1
 
     ifconfig wlan0 up
-    ip route del default || true
-    ip add flush dev wlan0
-    ip addr add $ipv4_prefix.1/24 dev wlan0
+    ip route replace default dev wlan0 metric 4096 || true
+    ip addr replace $ipv4_prefix.1/24 dev wlan0
     # dnsmasq --pid-file=/tmp/dnsmasq.run -C /etc/dnsmasq.conf
-    hostapd -B -i wlan0 /etc/hostapd.conf
-    udhcpd -S /etc/udhcpd.wlan0.conf
+    hostapd -B -P /run/hostapd.wlan0.pid -i wlan0 /etc/hostapd.conf
+    udhcpd -S -p /run/udhcpd.wlan0.pid /etc/udhcpd.wlan0.conf
 
     if [ ! -f "$APFLAG_FILE" ]; then
-        touch "$APFLAG_FILE"
+        mkdir -p "$(dirname "$APFLAG_FILE")"
+        install -m 0600 /dev/null "$APFLAG_FILE"
     fi
 
 }
 
 stop() {
-    ps -ef | grep hostapd | grep -v grep | awk '{print $1}' | xargs kill -2 || true
-    ps -ef | grep "udhcpd -S /etc/udhcpd.wlan0.conf" | grep -v grep | awk '{print $1}' | xargs kill -2 || true
+    if [ -s /run/hostapd.wlan0.pid ]; then
+        read -r pid </run/hostapd.wlan0.pid
+        case "$pid" in (*[!0-9]*|'') ;; (*) kill -2 "$pid" || true ;; esac
+        rm -f /run/hostapd.wlan0.pid
+    fi
+    if [ -s /run/udhcpd.wlan0.pid ]; then
+        read -r pid </run/udhcpd.wlan0.pid
+        case "$pid" in (*[!0-9]*|'') ;; (*) kill -2 "$pid" || true ;; esac
+        rm -f /run/udhcpd.wlan0.pid
+    fi
     killall wpa_supplicant || true
     if [ -e /run/udhcpc.wlan0.pid ]; then
-        kill $(cat /run/udhcpc.wlan0.pid) || true
+        read -r pid </run/udhcpc.wlan0.pid
+        case "$pid" in (*[!0-9]*|'') ;; (*) kill "$pid" || true ;; esac
         rm -f /run/udhcpc.wlan0.pid
     fi
     if [ -e /var/run/udhcpd.wlan0.pid ]; then
-        kill $(cat /var/run/udhcpd.wlan0.pid) || true
+        read -r pid </var/run/udhcpd.wlan0.pid
+        case "$pid" in (*[!0-9]*|'') ;; (*) kill "$pid" || true ;; esac
         rm -f /var/run/udhcpd.wlan0.pid
     fi
     if [ -e /tmp/dnsmasq.run ]; then
-        kill $(cat /tmp/dnsmasq.run) || true
+        read -r pid </tmp/dnsmasq.run
+        case "$pid" in (*[!0-9]*|'') ;; (*) kill "$pid" || true ;; esac
         rm -f /tmp/dnsmasq.run
     fi
     # if [ -e /etc/wpa_supplicant.conf]
     # then
     # 	echo > /etc/wpa_supplicant.conf
     # fi
-    airmon-ng stop wlan0mon || true
+    # monitor-mode cleanup is handled by the Wi-Fi driver reset path
 
     if [ -f "$APFLAG_FILE" ]; then
         rm "$APFLAG_FILE"

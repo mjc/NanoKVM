@@ -9,10 +9,12 @@ import (
 
 func downloadRouter(r *gin.Engine) {
 	service := download.NewService()
-	api := r.Group("/api").Use(middleware.CheckToken())
+	api := r.Group("/api")
+	api.Use(middleware.CheckToken())
 
 	api.POST("/download/image", service.DownloadImage)       // download image
-	api.GET("/download/image/status", service.StatusImage)   // download image
 	api.GET("/download/image/enabled", service.ImageEnabled) // download image
-	api.POST("/download/file", service.DownloadImageFile)       // download image
+	stepUp := api.Group("/download").Use(middleware.CheckToken())
+	stepUp.GET("/image/status", service.StatusImage)
+	stepUp.POST("/file", service.DownloadImageFile)
 }

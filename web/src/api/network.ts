@@ -1,4 +1,5 @@
 import { http } from '@/lib/http.ts';
+import { encrypt } from '@/lib/encrypt.ts';
 
 export type DNSMode = 'manual' | 'dhcp';
 
@@ -36,11 +37,11 @@ export function getWiFi() {
 export function connectWifiNoAuth(ssid: string, password: string, apPassword?: string) {
   const data = {
     ssid,
-    password
+    password: encrypt(password)
   };
   return http.post('/api/network/wifi', data, {
     headers: {
-      'X-AP-Key': apPassword || ''
+      'X-AP-Key': apPassword ? encrypt(apPassword) : ''
     }
   });
 }
@@ -52,7 +53,7 @@ export function verifyApLogin(apPassword: string) {
     {},
     {
       headers: {
-        'X-AP-Key': apPassword || ''
+        'X-AP-Key': apPassword ? encrypt(apPassword) : ''
       }
     }
   );
@@ -62,7 +63,7 @@ export function verifyApLogin(apPassword: string) {
 export function connectWifi(ssid: string, password: string) {
   const data = {
     ssid,
-    password
+    password: encrypt(password)
   };
   return http.post('/api/network/wifi/connect', data);
 }

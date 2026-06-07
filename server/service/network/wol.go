@@ -3,6 +3,7 @@ package network
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,15 +39,16 @@ func (s *Service) WakeOnLAN(c *gin.Context) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Errorf("failed to wake on lan: %s", err)
-		rsp.ErrRsp(c, -3, string(output))
+		_ = output
+		log.Errorf("failed to wake on lan")
+		rsp.ErrRsp(c, -3, "wake failed")
 		return
 	}
 
 	saveMac(mac)
 
 	rsp.OkRsp(c)
-	log.Debugf("wake on lan: %s", mac)
+	log.Debugf("wake on lan requested")
 }
 
 func (s *Service) GetMac(c *gin.Context) {
@@ -133,7 +135,7 @@ func (s *Service) SetMacName(c *gin.Context) {
 	}
 
 	rsp.OkRsp(c)
-	log.Debugf("set wol mac name: %s %s", req.Mac, req.Name)
+	log.Debugf("set wol mac name")
 }
 
 func (s *Service) DeleteMac(c *gin.Context) {
@@ -182,7 +184,7 @@ func (s *Service) DeleteMac(c *gin.Context) {
 	}
 
 	rsp.OkRsp(c)
-	log.Debugf("delete wol mac: %s", req.Mac)
+	log.Debugf("delete wol mac")
 }
 
 func parseMAC(mac string) (string, error) {
@@ -216,13 +218,13 @@ func saveMac(mac string) {
 		return
 	}
 
-	err := os.MkdirAll(filepath.Dir(WolMacFile), 0o755)
+	err := os.MkdirAll(filepath.Dir(WolMacFile), 0o700)
 	if err != nil {
 		log.Errorf("failed to create dir: %s", err)
 		return
 	}
 
-	file, err := os.OpenFile(WolMacFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	file, err := os.OpenFile(WolMacFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		log.Errorf("failed to open %s: %s", WolMacFile, err)
 		return
@@ -263,7 +265,12 @@ func isMacExist(mac string) bool {
 }
 
 func readWolMacs() ([]string, error) {
-	content, err := os.ReadFile(WolMacFile)
+	file, err := os.Open(WolMacFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, 64*1024))
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +295,7 @@ func writeWolMacs(macs []string) error {
 		data = strings.Join(macs, "\n") + "\n"
 	}
 
-	return os.WriteFile(WolMacFile, []byte(data), 0o644)
+	return os.WriteFile(WolMacFile, []byte(data), 0o600)
 }
 
 func splitWolMacLine(line string) (string, string, bool) {

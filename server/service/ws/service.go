@@ -31,7 +31,7 @@ func (s *Service) Connect(c *gin.Context) {
 
 	log.Debug("websocket connected")
 
-	client := NewClient(ws)
+	client := NewClient(ws, c.GetString("username"))
 
 	manager := GetManager()
 	manager.AddClient(ws, client)

@@ -40,8 +40,7 @@ export const Wifi = () => {
       } else {
         setVerifyState(rsp?.code === -1 ? 'denied' : 'failed');
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
       setVerifyState('failed');
     }
     setVerifying(false);
@@ -74,11 +73,12 @@ export const Wifi = () => {
           setState('failed');
           return;
       }
-    } catch (err) {
-      console.log(err);
+    } catch {
+      setState('failed');
+      return;
     }
 
-    setState('success');
+    setState('failed');
   }
 
   if (!isAuthenticated) {

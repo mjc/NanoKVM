@@ -41,12 +41,11 @@ func Connect(c *gin.Context) {
 	}
 	defer func() {
 		_ = wsConn.Close()
-		log.Debugf("h264 websocket disconnected: %s", c.ClientIP())
+		log.Debugf("h264 websocket disconnected")
 	}()
-	log.Debugf("h264 websocket connected: %s", c.ClientIP())
+	log.Debugf("h264 websocket connected")
 
-	var zeroTime time.Time
-	_ = wsConn.SetReadDeadline(zeroTime)
+	_ = wsConn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 	// create video connection
 	iceServers := createICEServers()
@@ -64,7 +63,7 @@ func Connect(c *gin.Context) {
 	}
 	defer func() {
 		_ = videoConn.Close()
-		log.Debugf("h264 video peer disconnected: %s", c.ClientIP())
+		log.Debugf("h264 video peer disconnected")
 	}()
 
 	// create client
@@ -107,7 +106,7 @@ func createICEServers() []webrtc.ICEServer {
 
 	if conf.Stun != "" && conf.Stun != "disable" {
 		iceServers = append(iceServers, webrtc.ICEServer{
-			URLs: []string{"stun:" + conf.Stun},
+			URLs: []string{"stuns:" + conf.Stun},
 		})
 	}
 
@@ -115,7 +114,7 @@ func createICEServers() []webrtc.ICEServer {
 		iceServers = append(iceServers, webrtc.ICEServer{
 			URLs:       []string{"turn:" + conf.Turn.TurnAddr},
 			Username:   conf.Turn.TurnUser,
-			Credential: conf.Turn.TurnCred,
+			Credential: "ephemeral",
 		})
 	}
 
@@ -123,22 +122,22 @@ func createICEServers() []webrtc.ICEServer {
 }
 
 type clientICEServer struct {
-	URLs       []string    `json:"urls"`
-	Username   string      `json:"username,omitempty"`
-	Credential interface{} `json:"credential,omitempty"`
+	URLs     []string `json:"urls"`
+	Username string   `json:"username,omitempty"`
 }
 
 func sendICEServers(client *Client, iceServers []webrtc.ICEServer) error {
 	clientServers := make([]clientICEServer, 0, len(iceServers))
 	for _, server := range iceServers {
 		clientServers = append(clientServers, clientICEServer{
-			URLs:       server.URLs,
-			Username:   server.Username,
-			Credential: server.Credential,
+			URLs:     server.URLs,
+			Username: server.Username,
 		})
 	}
 
-	data, err := json.Marshal(clientServers)
+	data, err := json.Marshal(struct {
+		Servers []clientICEServer `json:"servers"`
+	}{Servers: clientServers})
 	if err != nil {
 		return err
 	}
@@ -155,7 +154,7 @@ func createMediaEngine() (*webrtc.MediaEngine, error) {
 	}
 
 	if err := mediaEngine.RegisterHeaderExtension(
-		webrtc.RTPHeaderExtensionCapability{URI: "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"},
+		webrtc.RTPHeaderExtensionCapability{URI: playoutDelayURI},
 		webrtc.RTPCodecTypeVideo,
 	); err != nil {
 		log.Errorf("failed to register header extension: %s", err)
@@ -164,6 +163,8 @@ func createMediaEngine() (*webrtc.MediaEngine, error) {
 
 	return mediaEngine, nil
 }
+
+const playoutDelayURI = "urn:ietf:params:rtp-hdrext:playout-delay"
 
 func createPeerConnection(iceServers []webrtc.ICEServer, mediaEngine *webrtc.MediaEngine) (*webrtc.PeerConnection, error) {
 	settingEngine := webrtc.SettingEngine{}

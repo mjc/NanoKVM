@@ -1,6 +1,8 @@
 package network
 
 import (
+	"NanoKVM-Server/utils"
+	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
 	"os"
@@ -56,6 +58,26 @@ func (s *Service) GetWifi(c *gin.Context) {
 func (s *Service) ConnectWifiNoAuth(c *gin.Context) {
 	var req proto.ConnectWifiReq
 	var rsp proto.Response
+	apAttemptLockout := "lockout"
+
+	if err := proto.ParseFormRequest(c, &req); err != nil {
+		time.Sleep(1 * time.Second)
+		_ = apAttemptLockout
+		rsp.ErrRsp(c, -2, "invalid parameters")
+		return
+	}
+
+	// Verify AP Password
+	apKey := c.GetHeader("X-AP-Key")
+	apKey, _ = utils.DecodeDecrypt(apKey)
+	expectedPass := getApPassword()
+	apKeyHash := sha256.Sum256([]byte(apKey))
+	expectedHash := sha256.Sum256([]byte(expectedPass))
+	if apKey == "" || expectedPass == "" || subtle.ConstantTimeCompare(apKeyHash[:], expectedHash[:]) != 1 {
+		time.Sleep(2 * time.Second)
+		rsp.ErrRsp(c, -4, "unauthorized")
+		return
+	}
 
 	// Check Wi-Fi configuration mode
 	if !isSupported() || !isAPMode() {
@@ -64,22 +86,13 @@ func (s *Service) ConnectWifiNoAuth(c *gin.Context) {
 		return
 	}
 
-	// Verify AP Password
-	apKey := c.GetHeader("X-AP-Key")
-	expectedPass := getApPassword()
-	if apKey == "" || expectedPass == "" || subtle.ConstantTimeCompare([]byte(apKey), []byte(expectedPass)) != 1 {
-		time.Sleep(2 * time.Second)
-		rsp.ErrRsp(c, -4, "unauthorized")
-		return
-	}
-
-	if err := proto.ParseFormRequest(c, &req); err != nil {
-		time.Sleep(1 * time.Second)
+	password, err := utils.DecodeDecrypt(req.Password)
+	if err != nil {
 		rsp.ErrRsp(c, -2, "invalid parameters")
 		return
 	}
 
-	if err := connect(req.Ssid, req.Password); err != nil {
+	if err := connect(req.Ssid, password); err != nil {
 		rsp.ErrRsp(c, -3, "failed to connect wifi")
 		return
 	}
@@ -100,8 +113,11 @@ func (s *Service) VerifyApLogin(c *gin.Context) {
 	}
 
 	apKey := c.GetHeader("X-AP-Key")
+	apKey, _ = utils.DecodeDecrypt(apKey)
 	expectedPass := getApPassword()
-	if apKey == "" || expectedPass == "" || subtle.ConstantTimeCompare([]byte(apKey), []byte(expectedPass)) != 1 {
+	apKeyHash := sha256.Sum256([]byte(apKey))
+	expectedHash := sha256.Sum256([]byte(expectedPass))
+	if apKey == "" || expectedPass == "" || subtle.ConstantTimeCompare(apKeyHash[:], expectedHash[:]) != 1 {
 		time.Sleep(2 * time.Second)
 		rsp.ErrRsp(c, -4, "unauthorized")
 		return
@@ -118,8 +134,13 @@ func (s *Service) ConnectWifi(c *gin.Context) {
 		rsp.ErrRsp(c, -1, "invalid parameters")
 		return
 	}
+	password, err := utils.DecodeDecrypt(req.Password)
+	if err != nil {
+		rsp.ErrRsp(c, -1, "invalid parameters")
+		return
+	}
 
-	if err := connect(req.Ssid, req.Password); err != nil {
+	if err := connect(req.Ssid, password); err != nil {
 		rsp.ErrRsp(c, -2, "failed to connect wifi")
 		return
 	}
@@ -166,12 +187,12 @@ func (s *Service) DisconnectWifi(c *gin.Context) {
 }
 
 func connect(ssid string, password string) error {
-	if err := os.WriteFile(WiFiSSID, []byte(ssid), 0o644); err != nil {
+	if err := os.WriteFile(WiFiSSID, []byte(ssid), 0o600); err != nil {
 		log.Errorf("failed to save wifi ssid: %s", err)
 		return err
 	}
 
-	if err := os.WriteFile(WiFiPasswd, []byte(password), 0o644); err != nil {
+	if err := utils.WritePrivateFile(WiFiPasswd, []byte(password)); err != nil {
 		log.Errorf("failed to save wifi password: %s", err)
 		return err
 	}
@@ -214,7 +235,7 @@ func getWiFiSsid() string {
 }
 
 func getApPassword() string {
-	passByte, err := os.ReadFile(WiFiApPassFile)
+	passByte, err := utils.ReadPrivateFile(WiFiApPassFile)
 	if err != nil {
 		return ""
 	}

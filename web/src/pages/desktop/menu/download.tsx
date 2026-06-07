@@ -46,7 +46,7 @@ export const DownloadImage = () => {
       checkDiskEnabled();
       getDownloadStatus();
       if (!intervalId.current) {
-        intervalId.current = setInterval(getDownloadStatus, 2500);
+        intervalId.current = setInterval(() => getDownloadStatus(), 2500);
       }
       setIsKeyboardEnable(false);
       setPopoverKey((prevKey) => prevKey + 1); // Force re-render
@@ -76,7 +76,6 @@ export const DownloadImage = () => {
           } else {
             setLog('Downloading' + ': ' + rsp.data.file);
           }
-          setInput(rsp.data.file);
         }
         if (rsp.data.status === 'failed') {
           setLog('Failed');
@@ -94,7 +93,7 @@ export const DownloadImage = () => {
     if (!url) return;
 
     setStatus('in_progress');
-    setLog('Downloading: ' + url);
+    setLog(t('download.title'));
     // start the getDownloadStatus to tick every 5 seconds
 
     downloadImage(url)
@@ -102,7 +101,7 @@ export const DownloadImage = () => {
         getDownloadStatus();
         // Start the interval to check the download status
         if (!intervalId.current) {
-          intervalId.current = setInterval(getDownloadStatus, 2500);
+          intervalId.current = setInterval(() => getDownloadStatus(), 2500);
         }
       })
       .catch(() => {
@@ -114,7 +113,7 @@ export const DownloadImage = () => {
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
-    if (!file || !file.name.toLowerCase().endsWith(".iso")) {
+    if (!file || file.type !== 'application/x-iso9660-image') {
       setStatus('failed');
       setLog(t('download.NoISO'));
       return;
@@ -129,14 +128,14 @@ export const DownloadImage = () => {
   function upload(file: File | null) {
     if (!file) return;
 
-    if (!file || !file.name.toLowerCase().endsWith(".iso")) {
+    if (!file || file.type !== 'application/x-iso9660-image') {
       setStatus('failed');
       setLog(t('download.NoISO'));
       return;
     }
 
     setStatus('in_progress');
-    setLog('Downloading: ' + file.name);
+    setLog(t('download.title'));
 
     const formData = new FormData();
     formData.append("file", file);
@@ -158,7 +157,7 @@ export const DownloadImage = () => {
     if (!intervalId.current) {
       getDownloadStatus();
       setTimeout(() => {
-        intervalId.current = setInterval(getDownloadStatus, 2500);
+        intervalId.current = setInterval(() => getDownloadStatus(), 2500);
       }, 2500);
     }
     
@@ -208,7 +207,7 @@ export const DownloadImage = () => {
                     e.preventDefault();
                     setIsDragging(false);
                     const file = e.dataTransfer.files?.[0] ?? null;
-                    if (!file || !file.name.toLowerCase().endsWith(".iso")) {
+                    if (!file || file.type !== 'application/x-iso9660-image') {
                       setStatus('failed');
                       setLog(t('download.NoISO'));
                       return;
