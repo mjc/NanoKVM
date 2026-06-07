@@ -174,6 +174,9 @@ func validateUpdateURL(raw string) error {
 	if host == "" {
 		return fmt.Errorf("update URL missing host")
 	}
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return fmt.Errorf("update URL host is not public")
+	}
 	if ip, err := netip.ParseAddr(host); err == nil && !isPublicIP(ip) {
 		return fmt.Errorf("update URL host is not public")
 	}

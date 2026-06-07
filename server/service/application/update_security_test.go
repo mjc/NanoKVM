@@ -52,6 +52,7 @@ func TestValidateUpdateURLRejectsLocalOrPlainHTTP(t *testing.T) {
 		"https://[::1]/update.tar.gz",
 		"https://192.168.1.10/update.tar.gz",
 		"https://169.254.169.254/latest/meta-data",
+		"https://localhost/update.tar.gz",
 	}
 	for _, raw := range rejected {
 		t.Run(raw, func(t *testing.T) {
@@ -93,6 +94,9 @@ func TestCopyUploadedFileRejectsOversizedArtifact(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "nanokvm.tar.gz")
 	if err := copyUploadedFile(strings.NewReader("too-large"), target, int64(len("too-large")), 3); err == nil {
 		t.Fatal("copyUploadedFile succeeded for oversized artifact")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("oversized upload artifact still exists: %v", err)
 	}
 }
 

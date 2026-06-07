@@ -125,10 +125,6 @@ func saveUploadedFile(part *multipart.Part, contentLength int64) (string, error)
 		return "", fmt.Errorf("no filename provided")
 	}
 
-	if err := validateFilename(filename); err != nil {
-		return "", err
-	}
-
 	outPath, err := safeCachePath(filename)
 	if err != nil {
 		return "", err
@@ -141,21 +137,27 @@ func saveUploadedFile(part *multipart.Part, contentLength int64) (string, error)
 	return outPath, nil
 }
 
-func copyUploadedFile(part io.Reader, outPath string, contentLength int64, maxBytes int64) error {
+func copyUploadedFile(part io.Reader, outPath string, contentLength int64, maxBytes int64) (err error) {
 	out, err := os.OpenFile(outPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer out.Close()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(outPath)
+		}
+	}()
 
 	pw := newProgressWriter(out, contentLength)
 	defer pw.Stop()
 
-	limited := &io.LimitedReader{R: part, N: maxBytes + 1}
+	limited := &io.LimitedReader{R: part, N: maxBytes}
 	if _, err := io.Copy(pw, limited); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
-	if limited.N == 0 {
+	probe := make([]byte, 1)
+	if n, probeErr := part.Read(probe); probeErr == nil || n > 0 {
 		return fmt.Errorf("uploaded file exceeds maximum size")
 	}
 

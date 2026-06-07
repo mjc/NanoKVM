@@ -12,11 +12,15 @@ import (
 )
 
 const MaxDownloadBytes int64 = 512 << 20
+const downloadHTTPTimeout = 10 * time.Minute
 
-func Download(req *http.Request, target string) error {
+func Download(req *http.Request, target string) (err error) {
+	return downloadWithLimit(req, target, MaxDownloadBytes)
+}
+
+func downloadWithLimit(req *http.Request, target string, maxBytes int64) (err error) {
 	log.Debug("downloading file")
-	err := os.MkdirAll(filepath.Dir(target), 0o755)
-	if err != nil {
+	if err = os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		log.Errorf("create dir %s err: %s", filepath.Dir(target), err)
 		return err
 	}
@@ -28,8 +32,13 @@ func Download(req *http.Request, target string) error {
 	defer func() {
 		_ = out.Close()
 	}()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(target)
+		}
+	}()
 
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	resp, err := (&http.Client{Timeout: downloadHTTPTimeout}).Do(req)
 	if err != nil {
 		log.Errorf("request error: %s", err)
 		return err
@@ -49,13 +58,14 @@ func Download(req *http.Request, target string) error {
 		return errors.New("unsupported content type")
 	}
 
-	limited := &io.LimitedReader{R: resp.Body, N: MaxDownloadBytes + 1}
+	limited := &io.LimitedReader{R: resp.Body, N: maxBytes}
 	_, err = io.Copy(out, limited)
 	if err != nil {
 		log.Errorf("download file to %s err: %s", target, err)
 		return err
 	}
-	if limited.N == 0 {
+	probe := make([]byte, 1)
+	if n, probeErr := resp.Body.Read(probe); probeErr == nil || n > 0 {
 		return errors.New("download exceeds maximum size")
 	}
 
