@@ -19,7 +19,7 @@ var (
 	setAccount                      = SetAccount
 	delAccount                      = DelAccount
 	changeRootPassword              = changeRootPasswordImpl
-	revokeTokensAfterPasswordChange = config.RegenerateSecretKey
+	revokeTokensAfterPasswordChange = config.ForceRegenerateSecretKey
 )
 
 func (s *Service) ChangePassword(c *gin.Context) {
@@ -90,16 +90,20 @@ func isDefaultPasswordChanged(account *Account) bool {
 		return false
 	}
 
-	err := bcrypt.CompareHashAndPassword([]byte(account.Password), []byte("admin"))
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
-		return true
+	if isBcryptHash(account.Password) {
+		err := bcrypt.CompareHashAndPassword([]byte(account.Password), []byte("admin"))
+		if err == nil {
+			return false
+		}
+		return errors.Is(err, bcrypt.ErrMismatchedHashAndPassword)
 	}
 
 	legacyPassword, err := decodeLegacyPassword(account.Password)
 	return err == nil && legacyPassword != "" && legacyPassword != "admin"
+}
+
+func isBcryptHash(password string) bool {
+	return len(password) >= 4 && password[0] == '$' && password[1] == '2'
 }
 
 func decodeLegacyPassword(password string) (value string, err error) {
