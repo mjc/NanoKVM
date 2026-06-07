@@ -18,6 +18,7 @@ import (
 var (
 	setAccount                      = SetAccount
 	delAccount                      = DelAccount
+	getAccount                      = GetAccount
 	changeRootPassword              = changeRootPasswordImpl
 	revokeTokensAfterPasswordChange = config.ForceRegenerateSecretKey
 )
@@ -37,6 +38,12 @@ func (s *Service) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	previousAccount, err := getAccount()
+	if err != nil {
+		rsp.ErrRsp(c, -1, "failed to get password")
+		return
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		rsp.ErrRsp(c, -3, "failed to hash password")
@@ -51,7 +58,13 @@ func (s *Service) ChangePassword(c *gin.Context) {
 	// change root password
 	err = changeRootPassword(password)
 	if err != nil {
-		_ = delAccount()
+		if previousAccount != nil {
+			if restoreErr := setAccount(previousAccount.Username, previousAccount.Password); restoreErr != nil {
+				log.Errorf("failed to restore password after root password change failure: %s", restoreErr)
+				rsp.ErrRsp(c, -6, "failed to restore password")
+				return
+			}
+		}
 		rsp.ErrRsp(c, -5, "failed to change password")
 		return
 	}

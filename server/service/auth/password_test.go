@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +18,16 @@ import (
 
 func TestChangePasswordRevokesTokensAfterSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+
+	// These tests replace package-level hooks and must not run with t.Parallel().
+	oldPasswordHash := hashPassword(t, "old-password")
+	previousGetAccount := getAccount
+	getAccount = func() (*Account, error) {
+		return &Account{Username: "admin", Password: oldPasswordHash}, nil
+	}
+	t.Cleanup(func() {
+		getAccount = previousGetAccount
+	})
 
 	var accountUsername string
 	var accountPassword string
@@ -67,6 +78,121 @@ func TestChangePasswordRevokesTokensAfterSuccess(t *testing.T) {
 	if !revoked {
 		t.Fatal("expected successful password change to revoke existing tokens")
 	}
+}
+
+func TestChangePasswordRestoresPreviousAccountWhenRootPasswordChangeFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// This test replaces package-level hooks and must not run with t.Parallel().
+	oldPasswordHash := hashPassword(t, "old-password")
+	previousGetAccount := getAccount
+	getAccount = func() (*Account, error) {
+		return &Account{Username: "admin", Password: oldPasswordHash}, nil
+	}
+	t.Cleanup(func() {
+		getAccount = previousGetAccount
+	})
+
+	var savedAccounts []Account
+	previousSetAccount := setAccount
+	setAccount = func(username string, hashedPassword string) error {
+		savedAccounts = append(savedAccounts, Account{Username: username, Password: hashedPassword})
+		return nil
+	}
+	t.Cleanup(func() {
+		setAccount = previousSetAccount
+	})
+
+	previousChangeRootPassword := changeRootPassword
+	changeRootPassword = func(password string) error {
+		return errors.New("root password update failed")
+	}
+	t.Cleanup(func() {
+		changeRootPassword = previousChangeRootPassword
+	})
+
+	previousDelAccount := delAccount
+	delAccount = func() error {
+		t.Fatal("failed password changes must not delete the stored account")
+		return nil
+	}
+	t.Cleanup(func() {
+		delAccount = previousDelAccount
+	})
+
+	previousRevokeTokens := revokeTokensAfterPasswordChange
+	revokeTokensAfterPasswordChange = func() {
+		t.Fatal("tokens should not be revoked when root password change fails")
+	}
+	t.Cleanup(func() {
+		revokeTokensAfterPasswordChange = previousRevokeTokens
+	})
+
+	w := changePasswordRequest(t, proto.ChangePasswordReq{
+		Username: "admin",
+		Password: url.QueryEscape(aes256.Encrypt("changed-password", utils.SecretKey)),
+	})
+
+	assertAuthResponse(t, w, -5, "failed to change password")
+	if len(savedAccounts) != 2 {
+		t.Fatalf("saved accounts = %d, want new account save and previous account restore", len(savedAccounts))
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(savedAccounts[0].Password), []byte("changed-password")); err != nil {
+		t.Fatalf("first saved account does not contain changed password: %v", err)
+	}
+	if savedAccounts[1].Username != "admin" || savedAccounts[1].Password != oldPasswordHash {
+		t.Fatalf("restored account = %+v, want previous admin account", savedAccounts[1])
+	}
+}
+
+func TestChangePasswordReportsRestoreFailureWhenRootPasswordChangeFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// This test replaces package-level hooks and must not run with t.Parallel().
+	oldPasswordHash := hashPassword(t, "old-password")
+	previousGetAccount := getAccount
+	getAccount = func() (*Account, error) {
+		return &Account{Username: "admin", Password: oldPasswordHash}, nil
+	}
+	t.Cleanup(func() {
+		getAccount = previousGetAccount
+	})
+
+	var saves int
+	previousSetAccount := setAccount
+	setAccount = func(username string, hashedPassword string) error {
+		saves++
+		if saves == 2 {
+			return errors.New("restore failed")
+		}
+		return nil
+	}
+	t.Cleanup(func() {
+		setAccount = previousSetAccount
+	})
+
+	previousChangeRootPassword := changeRootPassword
+	changeRootPassword = func(password string) error {
+		return errors.New("root password update failed")
+	}
+	t.Cleanup(func() {
+		changeRootPassword = previousChangeRootPassword
+	})
+
+	previousRevokeTokens := revokeTokensAfterPasswordChange
+	revokeTokensAfterPasswordChange = func() {
+		t.Fatal("tokens should not be revoked when root password change fails")
+	}
+	t.Cleanup(func() {
+		revokeTokensAfterPasswordChange = previousRevokeTokens
+	})
+
+	w := changePasswordRequest(t, proto.ChangePasswordReq{
+		Username: "admin",
+		Password: url.QueryEscape(aes256.Encrypt("changed-password", utils.SecretKey)),
+	})
+
+	assertAuthResponse(t, w, -6, "failed to restore password")
 }
 
 func TestIsDefaultPasswordChanged(t *testing.T) {
