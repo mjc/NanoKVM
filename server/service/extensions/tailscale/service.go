@@ -176,7 +176,7 @@ func (s *Service) Login(c *gin.Context) {
 		Url: url,
 	})
 
-	log.Debugf("tailscale login url: %s", url)
+	log.Debug("tailscale login url generated")
 }
 
 func (s *Service) Logout(c *gin.Context) {

@@ -5,10 +5,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 )
 
@@ -43,29 +42,21 @@ func (c *Cli) Start() error {
 		}
 	}
 
-	commands := []string{
-		fmt.Sprintf("cp -f %s %s", ScriptBackupPath, ScriptPath),
-		fmt.Sprintf("%s start", ScriptPath),
+	if err := copyInitScriptCommand().Run(); err != nil {
+		return err
 	}
-
-	command := strings.Join(commands, " && ")
-	return exec.Command("sh", "-c", command).Run()
+	return serviceScriptCommand("start").Run()
 }
 
 func (c *Cli) Restart() error {
-	commands := []string{
-		fmt.Sprintf("cp -f %s %s", ScriptBackupPath, ScriptPath),
-		fmt.Sprintf("%s restart", ScriptPath),
+	if err := copyInitScriptCommand().Run(); err != nil {
+		return err
 	}
-
-	command := strings.Join(commands, " && ")
-	return exec.Command("sh", "-c", command).Run()
+	return serviceScriptCommand("restart").Run()
 }
 
 func (c *Cli) Stop() error {
-	command := fmt.Sprintf("%s stop", ScriptPath)
-	err := exec.Command("sh", "-c", command).Run()
-	if err != nil {
+	if err := serviceScriptCommand("stop").Run(); err != nil {
 		return err
 	}
 
@@ -73,46 +64,26 @@ func (c *Cli) Stop() error {
 }
 
 func (c *Cli) Up() error {
-	command := "tailscale up --accept-dns=false"
-	return exec.Command("sh", "-c", command).Run()
+	return tailscaleCommand("up", "--accept-dns=false").Run()
 }
 
 func (c *Cli) Down() error {
-	command := "tailscale down"
-	return exec.Command("sh", "-c", command).Run()
+	return tailscaleCommand("down").Run()
 }
 
 func (c *Cli) Status() (*TsStatus, error) {
-	command := "tailscale status --json"
-	cmd := exec.Command("sh", "-c", command)
+	cmd := tailscaleCommand("status", "--json")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, err
 	}
 
-	// output is not in standard json format
-	if outputStr := string(output); !strings.HasPrefix(outputStr, "{") {
-		index := strings.Index(outputStr, "{")
-		if index == -1 {
-			return nil, errors.New("unknown output")
-		}
-
-		output = []byte(outputStr[index:])
-	}
-
-	var status TsStatus
-	err = json.Unmarshal(output, &status)
-	if err != nil {
-		return nil, err
-	}
-
-	return &status, nil
+	return parseStatusJSON(output)
 }
 
 func (c *Cli) Login() (string, error) {
-	command := "tailscale login --accept-dns=false --timeout=10m"
-	cmd := exec.Command("sh", "-c", command)
+	cmd := tailscaleCommand("login", "--accept-dns=false", "--timeout=2m")
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -133,15 +104,56 @@ func (c *Cli) Login() (string, error) {
 			return "", err
 		}
 
-		if strings.Contains(line, "https") {
-			reg := regexp.MustCompile(`\s+`)
-			url := reg.ReplaceAllString(line, "")
-			return url, nil
+		loginURL, ok := extractLoginURL(line)
+		if ok {
+			return loginURL, nil
 		}
 	}
 }
 
 func (c *Cli) Logout() error {
-	command := "tailscale logout"
-	return exec.Command("sh", "-c", command).Run()
+	return tailscaleCommand("logout").Run()
+}
+
+func copyInitScriptCommand() *exec.Cmd {
+	return exec.Command("cp", "-f", ScriptBackupPath, ScriptPath)
+}
+
+func serviceScriptCommand(action string) *exec.Cmd {
+	switch action {
+	case "start", "restart", "stop":
+		return exec.Command(ScriptPath, action)
+	default:
+		return exec.Command("false")
+	}
+}
+
+func tailscaleCommand(args ...string) *exec.Cmd {
+	return exec.Command(TailscalePath, args...)
+}
+
+func parseStatusJSON(output []byte) (*TsStatus, error) {
+	if !strings.HasPrefix(strings.TrimSpace(string(output)), "{") {
+		return nil, errors.New("unknown output")
+	}
+
+	var status TsStatus
+	if err := json.Unmarshal(output, &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
+func extractLoginURL(line string) (string, bool) {
+	fields := strings.Fields(line)
+	for _, field := range fields {
+		parsed, err := url.Parse(field)
+		if err != nil {
+			continue
+		}
+		if parsed.Scheme == "https" && parsed.Hostname() == "login.tailscale.com" && strings.HasPrefix(parsed.Path, "/a/") {
+			return parsed.String(), true
+		}
+	}
+	return "", false
 }
