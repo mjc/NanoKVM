@@ -116,7 +116,7 @@ func isDefaultPasswordChanged(account *Account) bool {
 }
 
 func isBcryptHash(password string) bool {
-	return len(password) >= 4 && password[0] == '$' && password[1] == '2'
+	return len(password) >= 2 && password[0] == '$' && password[1] == '2'
 }
 
 func decodeLegacyPassword(password string) (value string, err error) {

@@ -279,6 +279,7 @@ func TestIsDefaultPasswordChanged(t *testing.T) {
 		{name: "legacy changed", account: &Account{Username: "admin", Password: legacyChanged}, want: true},
 		{name: "malformed legacy", account: &Account{Username: "admin", Password: "not-a-valid-legacy-value"}, want: false},
 		{name: "malformed bcrypt", account: &Account{Username: "admin", Password: "$2a$not-a-valid-bcrypt-hash"}, want: false},
+		{name: "short malformed bcrypt", account: &Account{Username: "admin", Password: "$2"}, want: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := isDefaultPasswordChanged(tt.account); got != tt.want {
