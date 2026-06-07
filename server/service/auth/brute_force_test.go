@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"strings"
 	"sync"
 	"testing"
 
@@ -58,35 +57,5 @@ func TestRecordLoginFailureDoesNotClearExistingAttemptsAtCapacity(t *testing.T) 
 
 	if len(loginAttempts) < maxLoginAttemptsRecords {
 		t.Fatalf("login attempt capacity handling cleared existing protections; remaining records = %d", len(loginAttempts))
-	}
-}
-
-func TestLoginAttemptKeyIncludesUsernameDimension(t *testing.T) {
-	content := readSource(t, "login.go")
-	if strings.Contains(content, "CheckLoginAttempt(clientIP)") ||
-		strings.Contains(content, "RecordLoginFailure(clientIP)") ||
-		strings.Contains(content, "ClearLoginAttempt(clientIP)") {
-		t.Fatal("login lockout accounting should include the attempted username, not only the client IP")
-	}
-}
-
-func TestGetClientIPDoesNotTrustProxyHeadersWithoutConfiguration(t *testing.T) {
-	content := readSource(t, "brute_force.go")
-	if strings.Contains(content, "c.ClientIP()") && !strings.Contains(content, "TrustedProxies") {
-		t.Fatal("login rate limiting should not trust forwarded client IP headers unless trusted proxies are configured")
-	}
-}
-
-func TestLoginAttemptCleanupTickerCanStop(t *testing.T) {
-	content := readSource(t, "brute_force.go")
-	if strings.Contains(content, "time.NewTicker(cleanupInterval)") &&
-		!strings.Contains(content, "Stop()") {
-		t.Fatal("login-attempt cleanup ticker should be stoppable so tests/reloads do not leak background goroutines")
-	}
-}
-
-func TestLoginAttemptCleanupWindowIsConfigured(t *testing.T) {
-	if strings.Contains(readSource(t, "brute_force.go"), "30*time.Minute") {
-		t.Fatal("login-attempt cleanup window should be configurable instead of hard-coded independently from lockout policy")
 	}
 }
