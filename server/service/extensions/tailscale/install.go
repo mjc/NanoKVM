@@ -92,8 +92,8 @@ func download(target string) error {
 	return nil
 }
 
-func downloadToFile(rawURL string, target string, maxBytes int64) error {
-	client := &http.Client{Timeout: tailscaleHTTPTimeout}
+func downloadToFile(rawURL string, target string, maxBytes int64) (err error) {
+	client := newTailscaleHTTPClient()
 	resp, err := client.Get(rawURL)
 	if err != nil {
 		log.Errorf("failed to download Tailscale: %s", err)
@@ -115,14 +115,20 @@ func downloadToFile(rawURL string, target string, maxBytes int64) error {
 	defer func() {
 		_ = out.Close()
 	}()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(target)
+		}
+	}()
 
-	limited := &io.LimitedReader{R: resp.Body, N: maxBytes + 1}
+	limited := &io.LimitedReader{R: resp.Body, N: maxBytes}
 	_, err = io.Copy(out, limited)
 	if err != nil {
 		log.Errorf("failed to copy response body to file: %s", err)
 		return err
 	}
-	if limited.N == 0 {
+	probe := make([]byte, 1)
+	if n, probeErr := resp.Body.Read(probe); probeErr == nil || n > 0 {
 		return errors.New("tailscale download exceeds maximum size")
 	}
 
@@ -130,8 +136,12 @@ func downloadToFile(rawURL string, target string, maxBytes int64) error {
 }
 
 func getDownloadURL() (string, error) {
-	client := &http.Client{Timeout: tailscaleHTTPTimeout}
-	resp, err := client.Get(OriginalURL)
+	return resolveTailscaleDownloadURL(OriginalURL)
+}
+
+func resolveTailscaleDownloadURL(source string) (string, error) {
+	client := newTailscaleHTTPClient()
+	resp, err := client.Get(source)
 	if err != nil {
 		return "", err
 	}
@@ -144,6 +154,15 @@ func getDownloadURL() (string, error) {
 	}
 
 	return resp.Request.URL.String(), nil
+}
+
+func newTailscaleHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: tailscaleHTTPTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return validateTailscaleDownloadURL(req.URL.String())
+		},
+	}
 }
 
 func validateTailscaleDownloadURL(raw string) error {

@@ -78,4 +78,23 @@ func TestDownloadToFileRejectsOversizedArtifact(t *testing.T) {
 	if err := downloadToFile(server.URL, target, 3); err == nil {
 		t.Fatal("downloadToFile succeeded for oversized artifact")
 	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("oversized download artifact still exists: %v", err)
+	}
+}
+
+func TestTailscaleHTTPClientRejectsUnexpectedRedirect(t *testing.T) {
+	t.Parallel()
+
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://example.com/tailscale.tgz", http.StatusFound)
+	}))
+	defer redirect.Close()
+
+	client := newTailscaleHTTPClient()
+	resp, err := client.Get(redirect.URL)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("client followed redirect to unexpected host")
+	}
 }
