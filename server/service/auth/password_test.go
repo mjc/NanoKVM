@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"testing"
 
+	"NanoKVM-Server/config"
+	"NanoKVM-Server/middleware"
 	"NanoKVM-Server/proto"
 	"NanoKVM-Server/utils"
 	"github.com/gin-gonic/gin"
@@ -77,6 +79,70 @@ func TestChangePasswordRevokesTokensAfterSuccess(t *testing.T) {
 	}
 	if !revoked {
 		t.Fatal("expected successful password change to revoke existing tokens")
+	}
+}
+
+func TestChangePasswordInvalidatesExistingJWTWhenLogoutRevocationDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// This test replaces package-level hooks and config values; it must not run with t.Parallel().
+	conf := config.GetInstance()
+	previousSecretKey := conf.JWT.SecretKey
+	previousRefreshDuration := conf.JWT.RefreshTokenDuration
+	previousRevokeOnLogout := conf.JWT.RevokeTokensOnLogout
+	conf.JWT.SecretKey = "old-secret-for-password-change-test"
+	conf.JWT.RefreshTokenDuration = 3600
+	conf.JWT.RevokeTokensOnLogout = false
+	t.Cleanup(func() {
+		conf.JWT.SecretKey = previousSecretKey
+		conf.JWT.RefreshTokenDuration = previousRefreshDuration
+		conf.JWT.RevokeTokensOnLogout = previousRevokeOnLogout
+	})
+
+	token, err := middleware.GenerateJWT("admin")
+	if err != nil {
+		t.Fatalf("generate jwt: %v", err)
+	}
+	if _, err := middleware.ParseJWT(token); err != nil {
+		t.Fatalf("token should be valid before password change: %v", err)
+	}
+
+	oldPasswordHash := hashPassword(t, "old-password")
+	previousGetAccount := getAccount
+	getAccount = func() (*Account, error) {
+		return &Account{Username: "admin", Password: oldPasswordHash}, nil
+	}
+	t.Cleanup(func() {
+		getAccount = previousGetAccount
+	})
+
+	previousSetAccount := setAccount
+	setAccount = func(username string, hashedPassword string) error {
+		return nil
+	}
+	t.Cleanup(func() {
+		setAccount = previousSetAccount
+	})
+
+	previousChangeRootPassword := changeRootPassword
+	changeRootPassword = func(password string) error {
+		return nil
+	}
+	t.Cleanup(func() {
+		changeRootPassword = previousChangeRootPassword
+	})
+
+	w := changePasswordRequest(t, proto.ChangePasswordReq{
+		Username: "admin",
+		Password: url.QueryEscape(aes256.Encrypt("changed-password", utils.SecretKey)),
+	})
+
+	assertAuthResponse(t, w, 0, "success")
+	if conf.JWT.SecretKey == "old-secret-for-password-change-test" {
+		t.Fatal("password change did not rotate JWT signing secret")
+	}
+	if _, err := middleware.ParseJWT(token); err == nil {
+		t.Fatal("token issued before password change should be invalid after password change")
 	}
 }
 
