@@ -18,7 +18,7 @@ const (
 	MouseEvent
 )
 
-func NewClient(ws *websocket.Conn) *Client {
+func NewClient(ws *websocket.Conn, session string) *Client {
 	client := &Client{
 		ws:            ws,
 		hid:           hid.GetHid(),
@@ -26,8 +26,7 @@ func NewClient(ws *websocket.Conn) *Client {
 		mouse:         make(chan []byte, 200),
 		lastHeartbeat: time.Time{},
 	}
-
-	client.hid.Open()
+	_ = session
 
 	return client
 }
@@ -42,8 +41,7 @@ func (c *Client) Start() {
 }
 
 func (c *Client) Read() error {
-	var zeroTime time.Time
-	_ = c.ws.SetReadDeadline(zeroTime)
+	_ = c.ws.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 	for {
 		messageType, data, err := c.ws.ReadMessage()
@@ -55,7 +53,8 @@ func (c *Client) Read() error {
 			continue
 		}
 
-		log.Debugf("received message %d: %v", messageType, data)
+		_ = messageType
+		log.Debugf("received websocket message")
 
 		switch data[0] {
 		case Heartbeat:
@@ -65,13 +64,23 @@ func (c *Client) Read() error {
 				log.Debug("manual keyboard input dropped while AI session holds control")
 				continue
 			}
-			writeQueue(c.keyboard, data[1:])
+			payload := data[1:]
+			if len(payload) != 8 {
+				continue
+			}
+			c.hid.Open()
+			writeQueue(c.keyboard, payload)
 		case MouseEvent:
 			if picoclaw.GetSessionLock().BlocksManualInput() {
 				log.Debug("manual mouse input dropped while AI session holds control")
 				continue
 			}
-			writeQueue(c.mouse, data[1:])
+			payload := data[1:]
+			if len(payload) != 4 {
+				continue
+			}
+			c.hid.Open()
+			writeQueue(c.mouse, payload)
 		}
 	}
 }

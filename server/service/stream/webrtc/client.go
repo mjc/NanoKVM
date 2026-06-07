@@ -49,21 +49,21 @@ func (c *Client) WriteMessage(event string, data string) error {
 		return err
 	}
 
-	log.Debugf("sent message %s", event)
+	log.Debugf("sent message")
 	return nil
 }
 
 func (c *Client) ReadMessage() (*Message, error) {
 	_, raw, err := c.ws.ReadMessage()
 	if err != nil {
-		log.Errorf("failed to read message: %v", err)
+		log.Errorf("failed to read signaling message")
 		return nil, err
 	}
 
 	var message Message
 	if err := json.Unmarshal(raw, &message); err != nil {
-		log.Errorf("failed to unmarshal message: %v", err)
-		return nil, nil
+		log.Errorf("failed to unmarshal message")
+		return nil, err
 	}
 
 	return &message, nil

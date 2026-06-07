@@ -20,9 +20,11 @@ type Streamer struct {
 	running        int32
 }
 
+const maxDirectClients = 4
+
 func newStreamer() *Streamer {
 	s := &Streamer{
-		clients: make(map[*websocket.Conn]bool),
+		clients: map[*websocket.Conn]bool{},
 	}
 	s.updateClientSnapshotLocked()
 
@@ -31,6 +33,11 @@ func newStreamer() *Streamer {
 
 func (s *Streamer) addClient(ws *websocket.Conn) {
 	s.mutex.Lock()
+	if len(s.clients) >= maxDirectClients {
+		s.mutex.Unlock()
+		_ = ws.Close()
+		return
+	}
 	s.clients[ws] = true
 	s.updateClientSnapshotLocked()
 	s.mutex.Unlock()
@@ -139,9 +146,11 @@ func (s *Streamer) send(clients []*websocket.Conn, isKeyFrame byte, timestamp in
 		return err
 	}
 
-	for _, client := range clients {
+	for index := range clients {
+		client := clients[index]
+		_ = client.SetWriteDeadline(time.Now().Add(time.Second))
 		if err := client.WriteMessage(websocket.BinaryMessage, buf.Bytes()); err != nil {
-			log.Errorf("failed to write message to client %s: %s.", client.RemoteAddr(), err)
+			log.Errorf("failed to write message to client")
 
 			s.removeClient(client)
 		}

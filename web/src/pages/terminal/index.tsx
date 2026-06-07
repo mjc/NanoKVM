@@ -7,9 +7,8 @@ import { useTranslation } from 'react-i18next';
 import '@xterm/xterm/css/xterm.css';
 
 import { getBaseUrl } from '@/lib/service.ts';
+import { getToken } from '@/lib/cookie.ts';
 import { Head } from '@/components/head.tsx';
-
-import { validatePicocomParameters } from './validater.ts';
 
 export const Terminal = () => {
   const { t } = useTranslation();
@@ -28,15 +27,13 @@ export const Terminal = () => {
     fitAddon.fit();
 
     const url = `${getBaseUrl('ws')}/api/vm/terminal`;
-    const ws = new WebSocket(url);
-    let isPicocomRunning = false;
+    const ws = new WebSocket(url, getToken() ? `token.${getToken()}` : undefined);
 
     ws.onopen = () => {
       const attachAddon = new AttachAddon(ws);
       terminal.loadAddon(attachAddon);
 
       sendSize();
-      setTimeout(runPicocom, 300);
     };
 
     const sendSize = () => {
@@ -45,44 +42,12 @@ export const Terminal = () => {
       ws.send(blob);
     };
 
-    const runPicocom = () => {
-      const urls = window.location.href.split('?');
-      if (urls.length < 2) return;
-
-      const searchParams = new URLSearchParams(urls[1]);
-      const port = searchParams.get('port');
-      const baud = searchParams.get('baud');
-      const parity = searchParams.get('parity');
-      const flowControl = searchParams.get('flowControl');
-      const dataBits = searchParams.get('dataBits');
-      const stopBits = searchParams.get('stopBits');
-      if (!port || !baud) return;
-
-      if (!validatePicocomParameters({ port, baud, parity, flowControl, dataBits, stopBits })) {
-        return;
-      }
-
-      ws.send(
-        `picocom ${port} --baud ${baud} --parity ${parity} --flow ${flowControl} --databits ${dataBits} --stopbits ${stopBits}\r`
-      );
-
-      isPicocomRunning = true;
-    };
-
-    const exitPicocom = () => {
-      if (ws.readyState === WebSocket.OPEN && isPicocomRunning) {
-        ws.send('\x01\x18');
-        isPicocomRunning = false;
-      }
-    };
-
     const resizeScreen = () => {
       fitAddon.fit();
       sendSize();
     };
 
     const cleanupConnection = () => {
-      exitPicocom();
       setTimeout(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.close();

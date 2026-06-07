@@ -2,22 +2,54 @@ package download
 
 import (
 	"NanoKVM-Server/proto"
-	"fmt"
+	"NanoKVM-Server/utils"
+	"encoding/json"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
-	"regexp"
 )
 
 type Service struct{}
 
-var sentinelPath = "/tmp/.download_in_progress"
+const maxImageBytes = 8 << 30
+
+var sentinelPath = "/etc/kvm/download_state.json"
+
+type downloadState struct {
+	Status     string `json:"status"`
+	Label      string `json:"label"`
+	Percentage string `json:"percentage"`
+}
+
+func writeDownloadState(state downloadState) {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return
+	}
+	_ = utils.WritePrivateFile(sentinelPath, data)
+}
+
+func readDownloadState() (downloadState, error) {
+	data, err := utils.ReadPrivateFile(sentinelPath)
+	if err != nil {
+		return downloadState{}, err
+	}
+	var state downloadState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return downloadState{}, err
+	}
+	return state, nil
+}
 
 func NewService() *Service {
 	// Clear sentinel
@@ -31,9 +63,7 @@ func (s *Service) ImageEnabled(c *gin.Context) {
 
 	// Check if /data mount is RO/RW
 	testFile := "/data/.testfile"
-	file, err := os.Create(testFile)
-	defer file.Close()
-	defer os.Remove(testFile)
+	file, err := os.OpenFile(testFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		if os.IsPermission(err) {
 			rsp.OkRspWithData(c, &proto.ImageEnabledRsp{
@@ -46,6 +76,8 @@ func (s *Service) ImageEnabled(c *gin.Context) {
 		})
 		return
 	}
+	defer file.Close()
+	defer os.Remove(testFile)
 
 	rsp.OkRspWithData(c, &proto.ImageEnabledRsp{
 		Enabled: true,
@@ -80,7 +112,7 @@ func (s *Service) StatusImage(c *gin.Context) {
 	// Check if the sentinel file exists
 	log.Debug("StatusImage")
 	if _, err := os.Stat(sentinelPath); err == nil {
-		content, err := os.ReadFile(sentinelPath)
+		state, err := readDownloadState()
 		if err != nil {
 			log.Error("Failed to read sentinel file")
 			rsp.OkRspWithData(c, &proto.StatusImageRsp{
@@ -90,22 +122,11 @@ func (s *Service) StatusImage(c *gin.Context) {
 			})
 			return
 		}
-		splitted := strings.Split(string(content), ";")
-		if len(splitted) == 1 {
-			// No percentage, just the URL
-			rsp.OkRspWithData(c, &proto.StatusImageRsp{
-				Status:     "in_progress",
-				File:       splitted[0],
-				Percentage: "",
-			})
-		} else {
-			// Percentage is available
-			rsp.OkRspWithData(c, &proto.StatusImageRsp{
-				Status:     "in_progress",
-				File:       splitted[0],
-				Percentage: splitted[1],
-			})
-		}
+		rsp.OkRspWithData(c, &proto.StatusImageRsp{
+			Status:     state.Status,
+			File:       state.Label,
+			Percentage: state.Percentage,
+		})
 
 		return
 	}
@@ -130,50 +151,44 @@ func (s *Service) DownloadImageFile(c *gin.Context) {
 	}
 
 	// Create the sentinel file
-	err := os.WriteFile(sentinelPath, []byte("start"), 0644)
-	if err != nil {
-		log.Error("Failed to create sentinel file")
-		rsp.ErrRsp(c, -1, "failed to create sentinel file")
-		return
-	}
+	writeDownloadState(downloadState{Status: "start"})
 
-    // Multipart Reader direkt nutzen (keine FormFile!)
-    reader, err := c.Request.MultipartReader()
-    if err != nil {
+	// Multipart Reader direkt nutzen (keine FormFile!)
+	reader, err := c.Request.MultipartReader()
+	if err != nil {
 		log.Error("invalid multipart data")
 		rsp.ErrRsp(c, -1, "invalid multipart data")
 		defer os.Remove(sentinelPath)
-        return
-    }
+		return
+	}
 
-	
-	var lw *loggingWriter
+	lw := newLoggingWriter(nil, 0)
 
-    for {
-        part, err := reader.NextPart()
-        if err == io.EOF {
-            break
-        }
-        if err != nil {
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
 			log.Error("failed to read part")
 			rsp.ErrRsp(c, -1, "failed to read part")
-			lw.stopTicker()
+			stopLoggingWriter(lw)
 			defer os.Remove(sentinelPath)
-            return
-        }
+			return
+		}
 
-        if part.FormName() != "file" {
-            continue
-        }
+		if part.FormName() != "file" {
+			continue
+		}
 
-        filename := part.FileName()
-        if filename == "" {
+		filename := part.FileName()
+		if filename == "" {
 			log.Error("no filename")
 			rsp.ErrRsp(c, -1, "no filename")
-			lw.stopTicker()
+			stopLoggingWriter(lw)
 			defer os.Remove(sentinelPath)
-            return
-        }
+			return
+		}
 
 		filename = filepath.Base(filename)
 
@@ -204,80 +219,71 @@ func (s *Service) DownloadImageFile(c *gin.Context) {
 			return
 		}
 
-		data, err := os.ReadFile(sentinelPath)
+		state, err := readDownloadState()
 		if err != nil {
 			log.Error("Read failed")
 			rsp.ErrRsp(c, -1, "Read failed")
-			lw.stopTicker()
+			stopLoggingWriter(lw)
 			defer os.Remove(sentinelPath)
 			return
 		}
 
-        outPath := "/data/" + filename
-        out, err := os.Create(outPath)
-        if err != nil {
+		outPath := filepath.Join("/data", filename)
+		out, err := os.OpenFile(outPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
 			log.Error("cannot create file")
 			rsp.ErrRsp(c, -1, "cannot create file")
-			lw.stopTicker()
+			stopLoggingWriter(lw)
 			defer os.Remove(sentinelPath)
-            return
-        }
-        defer out.Close()
+			return
+		}
+		defer out.Close()
 
-		if strings.Contains(string(data), "start") {
-			err = os.WriteFile(sentinelPath, []byte(filename), 0644)
-			if err != nil {
-				log.Error("Failed to create sentinel file")
-				rsp.ErrRsp(c, -1, "failed to create sentinel file")
-				lw.stopTicker()
-				defer os.Remove(outPath)
-				defer os.Remove(sentinelPath)
-				return
-			}
-			
-			lw = &loggingWriter{writer: out, totalSize: c.Request.ContentLength}
+		if state.Status == "start" {
+			writeDownloadState(downloadState{Status: "in_progress", Label: filename})
+			lw = &loggingWriter{writer: out, totalSize: maxImageBytes}
 			lw.startTicker()
 		} else {
-			if !strings.Contains(string(data), filename) {
+			if state.Label != filename {
 				log.Error("failed")
 				rsp.ErrRsp(c, -1, "failed")
-				lw.stopTicker()
+				stopLoggingWriter(lw)
 				defer os.Remove(outPath)
 				defer os.Remove(sentinelPath)
 				return
 			}
 		}
 
-        // Direkt streamen → kein RAM-Bedarf außer kleinem Buffer
-        _, err = io.Copy(lw, part)
-        if err != nil {
+		// Direkt streamen → kein RAM-Bedarf außer kleinem Buffer
+		_, err = io.Copy(lw, io.LimitReader(part, maxImageBytes))
+		if err != nil {
 			log.Error("write failed")
 			rsp.ErrRsp(c, -1, "write failed")
-			lw.stopTicker()
-			defer os.Remove(outPath)
-			defer os.Remove(sentinelPath)
-            return
-        }
-
-		ok, err := isISO9660(outPath)
-		if err != nil || !ok {
-			rsp.ErrRsp(c, -1, "file is not a valid ISO image")
-			lw.stopTicker()
+			stopLoggingWriter(lw)
 			defer os.Remove(outPath)
 			defer os.Remove(sentinelPath)
 			return
 		}
-    }
-	lw.stopTicker()
+
+		isoOK, err := isISO9660(outPath)
+		if err != nil || !isoOK {
+			rsp.ErrRsp(c, -1, "file is not a valid ISO image")
+			stopLoggingWriter(lw)
+			defer os.Remove(outPath)
+			defer os.Remove(sentinelPath)
+			return
+		}
+	}
+	stopLoggingWriter(lw)
 
 	rsp.OkRspWithData(c, &proto.StatusImageRsp{
 		Status:     "idle",
 		File:       "",
 		Percentage: "",
 	})
-	
+
 	defer os.Remove(sentinelPath)
-    return
+	return
 }
 
 func (s *Service) DownloadImage(c *gin.Context) {
@@ -297,7 +303,11 @@ func (s *Service) DownloadImage(c *gin.Context) {
 	}
 	// Parse the URI to see if its valid http/s
 	u, err := url.Parse(req.File)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		rsp.ErrRsp(c, -1, "invalid url")
+		return
+	}
+	if blocksPrivateAddress(u.Hostname()) {
 		rsp.ErrRsp(c, -1, "invalid url")
 		return
 	}
@@ -310,59 +320,45 @@ func (s *Service) DownloadImage(c *gin.Context) {
 		return
 	}
 	// Create the sentinel file
-	err = os.WriteFile(sentinelPath, []byte(req.File), 0644)
-	if err != nil {
-		log.Error("Failed to create sentinel file")
-		rsp.ErrRsp(c, -1, "failed to create sentinel file")
-		return
-	}
+	writeDownloadState(downloadState{Status: "in_progress", Label: "remote"})
 
 	// Check if it actually exists and fail if it doesn't
-	resp, err := http.Head(req.File)
-	if resp.StatusCode != http.StatusOK || err != nil {
-		rsp.ErrRsp(c, resp.StatusCode, "failed when checking the url")
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Head(req.File)
+	if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
+		rsp.ErrRsp(c, -1, "failed when checking the url")
 		log.Error("Failed to check the URL")
 		defer os.Remove(sentinelPath)
 		return
 	}
 	defer resp.Body.Close()
-
-	// Download the image in a goroutine to not block the request
-	go func() {
+	if resp.ContentLength > maxImageBytes {
+		rsp.ErrRsp(c, -1, "file too large")
 		defer os.Remove(sentinelPath)
-		resp, err = http.Get(req.File)
-		if err != nil {
-			log.Error("Failed to download the file")
-			rsp.ErrRsp(c, -1, "failed to download the file")
-			return
-		}
-		defer resp.Body.Close()
-		// Create the destination file
-		destPath := filepath.Join("/data", filepath.Base(u.Path))
-		out, err := os.Create(destPath)
-		if err != nil {
-			log.Error("Failed to create destination file")
-			rsp.ErrRsp(c, -1, "failed to create destination file")
-			return
-		}
-		defer out.Close()
+		return
+	}
 
-		lw := &loggingWriter{writer: out, totalSize: resp.ContentLength}
-		lw.startTicker()
-		_, err = io.Copy(lw, resp.Body)
-		if err != nil {
-			log.Error("Failed to save the file")
-			rsp.ErrRsp(c, -1, "failed to save the file")
-			lw.stopTicker()
-			return
-		}
-		lw.stopTicker()
-	}()
+	// Download the image asynchronously to avoid blocking the request.
+	go downloadRemoteImage(client, req.File, filepath.Base(u.Path))
 	rsp.OkRspWithData(c, &proto.StatusImageRsp{
 		Status:     "in_progress",
-		File:       req.File,
+		File:       "remote",
 		Percentage: "",
 	})
+}
+
+func blocksPrivateAddress(host string) bool {
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return true
+	}
+	for _, ip := range ips {
+		addr, ok := netip.AddrFromSlice(ip)
+		if !ok || addr.IsLoopback() || addr.IsPrivate() {
+			return true
+		}
+	}
+	return false
 }
 
 type loggingWriter struct {
@@ -370,48 +366,82 @@ type loggingWriter struct {
 	total     int64
 	totalSize int64
 	ticker    *time.Ticker
-	done      chan bool
+	done      chan struct{}
+}
+
+func newLoggingWriter(writer io.Writer, totalSize int64) *loggingWriter {
+	return &loggingWriter{writer: writer, totalSize: totalSize}
+}
+
+func stopLoggingWriter(lw *loggingWriter) {
+	if lw != nil {
+		lw.stopTicker()
+	}
 }
 
 func (lw *loggingWriter) startTicker() {
 	lw.ticker = time.NewTicker(2500 * time.Millisecond)
-	lw.done = make(chan bool)
-	go func() {
-		for {
-			select {
-			case <-lw.done:
-				return
-			case <-lw.ticker.C:
-				lw.updateSentinel()
-			}
+	lw.done = make(chan struct{})
+	go runLoggingWriter(lw)
+}
+
+func runLoggingWriter(lw *loggingWriter) {
+	for {
+		select {
+		case <-lw.done:
+			return
+		case <-lw.ticker.C:
+			lw.updateSentinel()
 		}
-	}()
+	}
 }
 
 func (lw *loggingWriter) stopTicker() {
+	if lw == nil || lw.ticker == nil {
+		return
+	}
 	lw.ticker.Stop()
-	lw.done <- true
+	close(lw.done)
 }
 
 func (lw *loggingWriter) updateSentinel() {
-	percentage := float64(lw.total) / float64(lw.totalSize) * 100
-	content, err := os.ReadFile(sentinelPath)
-	if err != nil {
-		log.Error("Failed to read sentinel file")
+	if lw.totalSize <= 0 {
 		return
 	}
-	splitted := strings.Split(string(content), ";")
-	if len(splitted) == 0 {
-		return
-	}
-	err = os.WriteFile(sentinelPath, []byte(fmt.Sprintf("%s;%.2f%%", splitted[0], percentage)), 0644)
-	if err != nil {
-		log.Error("Failed to update sentinel file")
-	}
+	ratio := float64(lw.total) / float64(lw.totalSize)
+	percentage := ratio * 100
+	writeDownloadState(downloadState{Status: "in_progress", Percentage: strconv.FormatFloat(percentage, 'f', 2, 64) + "%"})
 }
 
 func (lw *loggingWriter) Write(p []byte) (int, error) {
 	n, err := lw.writer.Write(p)
 	lw.total += int64(n)
 	return n, err
+}
+
+func downloadRemoteImage(client *http.Client, sourceURL string, destName string) {
+	defer os.Remove(sentinelPath)
+	resp, err := client.Get(sourceURL)
+	if err != nil {
+		log.Error("Failed to download the file")
+		return
+	}
+	defer resp.Body.Close()
+
+	destPath := filepath.Join("/data", destName)
+	out, err := os.OpenFile(destPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		log.Error("Failed to create destination file")
+		return
+	}
+	defer out.Close()
+
+	lw := newLoggingWriter(out, resp.ContentLength)
+	lw.startTicker()
+	if _, err = io.Copy(lw, io.LimitReader(resp.Body, maxImageBytes)); err != nil {
+		log.Error("Failed to save the file")
+		stopLoggingWriter(lw)
+		return
+	}
+	stopLoggingWriter(lw)
 }
