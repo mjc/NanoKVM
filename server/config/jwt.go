@@ -10,8 +10,12 @@ import (
 // RegenerateSecretKey regenerate secret key when logout
 func RegenerateSecretKey() {
 	if instance.JWT.RevokeTokensOnLogout {
-		instance.JWT.SecretKey = generateRandomSecretKey()
+		ForceRegenerateSecretKey()
 	}
+}
+
+func ForceRegenerateSecretKey() {
+	instance.JWT.SecretKey = generateRandomSecretKey()
 }
 
 // Generate random string for secret key.

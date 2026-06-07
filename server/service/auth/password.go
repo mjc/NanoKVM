@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"NanoKVM-Server/config"
 	"NanoKVM-Server/proto"
 	"NanoKVM-Server/utils"
 	"errors"
@@ -12,6 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	setAccount                      = SetAccount
+	delAccount                      = DelAccount
+	getAccount                      = GetAccount
+	changeRootPassword              = changeRootPasswordImpl
+	revokeTokensAfterPasswordChange = config.ForceRegenerateSecretKey
 )
 
 func (s *Service) ChangePassword(c *gin.Context) {
@@ -29,13 +38,19 @@ func (s *Service) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	previousAccount, err := getAccount()
+	if err != nil {
+		rsp.ErrRsp(c, -1, "failed to get password")
+		return
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		rsp.ErrRsp(c, -3, "failed to hash password")
 		return
 	}
 
-	if err = SetAccount(req.Username, string(hashedPassword)); err != nil {
+	if err = setAccount(req.Username, string(hashedPassword)); err != nil {
 		rsp.ErrRsp(c, -4, "failed to save password")
 		return
 	}
@@ -43,10 +58,18 @@ func (s *Service) ChangePassword(c *gin.Context) {
 	// change root password
 	err = changeRootPassword(password)
 	if err != nil {
-		_ = DelAccount()
+		if previousAccount != nil {
+			if restoreErr := setAccount(previousAccount.Username, previousAccount.Password); restoreErr != nil {
+				log.Errorf("failed to restore password after root password change failure: %s", restoreErr)
+				rsp.ErrRsp(c, -6, "failed to restore password")
+				return
+			}
+		}
 		rsp.ErrRsp(c, -5, "failed to change password")
 		return
 	}
+
+	revokeTokensAfterPasswordChange()
 
 	rsp.OkRsp(c)
 	log.Debugf("change password success, username: %s", req.Username)
@@ -55,29 +78,59 @@ func (s *Service) ChangePassword(c *gin.Context) {
 func (s *Service) IsPasswordUpdated(c *gin.Context) {
 	var rsp proto.Response
 
-	if _, err := os.Stat(AccountFile); err != nil {
-		rsp.OkRspWithData(c, &proto.IsPasswordUpdatedRsp{
-			IsUpdated: false,
-		})
-		return
-	}
-
-	account, err := GetAccount()
-	if err != nil || account == nil {
+	isUpdated, err := IsDefaultPasswordChanged()
+	if err != nil {
 		rsp.ErrRsp(c, -1, "failed to get password")
 		return
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(account.Password), []byte("admin"))
-
 	rsp.OkRspWithData(c, &proto.IsPasswordUpdatedRsp{
-		// If the hash is not valid, still assume it's not updated
-		// The error we want to see is password and hash not matching
-		IsUpdated: errors.Is(err, bcrypt.ErrMismatchedHashAndPassword),
+		IsUpdated: isUpdated,
 	})
 }
 
-func changeRootPassword(password string) error {
+func IsDefaultPasswordChanged() (bool, error) {
+	account, err := GetAccount()
+	if err != nil {
+		return false, err
+	}
+
+	return isDefaultPasswordChanged(account), nil
+}
+
+func isDefaultPasswordChanged(account *Account) bool {
+	if account == nil {
+		return false
+	}
+
+	if isBcryptHash(account.Password) {
+		err := bcrypt.CompareHashAndPassword([]byte(account.Password), []byte("admin"))
+		if err == nil {
+			return false
+		}
+		return errors.Is(err, bcrypt.ErrMismatchedHashAndPassword)
+	}
+
+	legacyPassword, err := decodeLegacyPassword(account.Password)
+	return err == nil && legacyPassword != "" && legacyPassword != "admin"
+}
+
+func isBcryptHash(password string) bool {
+	return len(password) >= 2 && password[0] == '$' && password[1] == '2'
+}
+
+func decodeLegacyPassword(password string) (value string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			value = ""
+			err = errors.New("decode legacy password failed")
+		}
+	}()
+
+	return utils.DecodeDecrypt(password)
+}
+
+func changeRootPasswordImpl(password string) error {
 	err := passwd(password)
 	if err != nil {
 		log.Errorf("failed to change root password: %s", err)
