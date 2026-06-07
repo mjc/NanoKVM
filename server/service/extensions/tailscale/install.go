@@ -1,11 +1,17 @@
 package tailscale
 
 import (
-	"NanoKVM-Server/utils"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"NanoKVM-Server/utils"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -13,6 +19,9 @@ import (
 const (
 	OriginalURL = "https://pkgs.tailscale.com/stable/tailscale_latest_riscv64.tgz"
 	Workspace   = "/root/.tailscale"
+
+	maxTailscaleDownloadBytes = 128 << 20
+	tailscaleHTTPTimeout      = 30 * time.Second
 )
 
 func isInstalled() bool {
@@ -23,12 +32,15 @@ func isInstalled() bool {
 }
 
 func install() error {
-	_ = os.MkdirAll(Workspace, 0o755)
+	_ = os.MkdirAll(Workspace, 0o700)
 	defer func() {
 		_ = os.RemoveAll(Workspace)
 	}()
 
-	tarFile := fmt.Sprintf("%s/tailscale_riscv64.tgz", Workspace)
+	tarFile, err := workspacePath("tailscale_riscv64.tgz")
+	if err != nil {
+		return err
+	}
 
 	// download
 	if err := download(tarFile); err != nil {
@@ -63,13 +75,26 @@ func install() error {
 }
 
 func download(target string) error {
-	url, err := getDownloadURL()
+	rawURL, err := getDownloadURL()
 	if err != nil {
 		log.Errorf("failed to get Tailscale download url: %s", err)
 		return err
 	}
+	if err := validateTailscaleDownloadURL(rawURL); err != nil {
+		return err
+	}
 
-	resp, err := http.Get(url)
+	if err := downloadToFile(rawURL, target, maxTailscaleDownloadBytes); err != nil {
+		return err
+	}
+
+	log.Debugf("download Tailscale successfully")
+	return nil
+}
+
+func downloadToFile(rawURL string, target string, maxBytes int64) error {
+	client := &http.Client{Timeout: tailscaleHTTPTimeout}
+	resp, err := client.Get(rawURL)
 	if err != nil {
 		log.Errorf("failed to download Tailscale: %s", err)
 		return err
@@ -82,7 +107,7 @@ func download(target string) error {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	out, err := os.Create(target)
+	out, err := os.OpenFile(target, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		log.Errorf("failed to create file: %s", err)
 		return err
@@ -91,18 +116,22 @@ func download(target string) error {
 		_ = out.Close()
 	}()
 
-	_, err = io.Copy(out, resp.Body)
+	limited := &io.LimitedReader{R: resp.Body, N: maxBytes + 1}
+	_, err = io.Copy(out, limited)
 	if err != nil {
 		log.Errorf("failed to copy response body to file: %s", err)
 		return err
 	}
+	if limited.N == 0 {
+		return errors.New("tailscale download exceeds maximum size")
+	}
 
-	log.Debugf("download Tailscale successfully")
 	return nil
 }
 
 func getDownloadURL() (string, error) {
-	resp, err := (&http.Client{}).Get(OriginalURL)
+	client := &http.Client{Timeout: tailscaleHTTPTimeout}
+	resp, err := client.Get(OriginalURL)
 	if err != nil {
 		return "", err
 	}
@@ -115,4 +144,35 @@ func getDownloadURL() (string, error) {
 	}
 
 	return resp.Request.URL.String(), nil
+}
+
+func validateTailscaleDownloadURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("tailscale download URL must use https")
+	}
+	host := parsed.Hostname()
+	if host != "pkgs.tailscale.com" && !strings.HasSuffix(host, ".tailscale.com") {
+		return fmt.Errorf("unexpected tailscale download host")
+	}
+	return nil
+}
+
+func workspacePath(name string) (string, error) {
+	if name == "" || filepath.Base(name) != name || strings.Contains(name, "..") {
+		return "", fmt.Errorf("invalid workspace filename")
+	}
+	workspace := filepath.Clean(Workspace)
+	target := filepath.Join(workspace, name)
+	rel, err := filepath.Rel(workspace, target)
+	if err != nil {
+		return "", err
+	}
+	if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("workspace path escapes directory")
+	}
+	return target, nil
 }
