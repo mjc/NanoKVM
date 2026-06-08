@@ -18,11 +18,6 @@ const (
 
 type Cli struct{}
 
-type commandSpec struct {
-	name string
-	args []string
-}
-
 type TsStatus struct {
 	BackendState string `json:"BackendState"`
 
@@ -47,15 +42,15 @@ func (c *Cli) Start() error {
 		}
 	}
 
-	return runCommandSpecs(initScriptCommandSpecs("start"))
+	return runInitScriptAction("start")
 }
 
 func (c *Cli) Restart() error {
-	return runCommandSpecs(initScriptCommandSpecs("restart"))
+	return runInitScriptAction("restart")
 }
 
 func (c *Cli) Stop() error {
-	if err := runCommandSpecs([]commandSpec{{name: ScriptPath, args: []string{"stop"}}}); err != nil {
+	if err := exec.Command(ScriptPath, "stop").Run(); err != nil {
 		return err
 	}
 
@@ -63,17 +58,15 @@ func (c *Cli) Stop() error {
 }
 
 func (c *Cli) Up() error {
-	return runCommandSpecs([]commandSpec{tailscaleCommandSpec("up", "--accept-dns=false")})
+	return runTailscale("up", "--accept-dns=false")
 }
 
 func (c *Cli) Down() error {
-	return runCommandSpecs([]commandSpec{tailscaleCommandSpec("down")})
+	return runTailscale("down")
 }
 
 func (c *Cli) Status() (*TsStatus, error) {
-	cmd := commandFromSpec(tailscaleCommandSpec("status", "--json"))
-
-	output, err := cmd.CombinedOutput()
+	output, err := runTailscaleOutput("status", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +91,7 @@ func (c *Cli) Status() (*TsStatus, error) {
 }
 
 func (c *Cli) Login() (string, error) {
-	cmd := commandFromSpec(tailscaleCommandSpec("login", "--accept-dns=false", "--timeout=10m"))
+	cmd := tailscaleCommand("login", "--accept-dns=false", "--timeout=10m")
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -128,29 +121,40 @@ func (c *Cli) Login() (string, error) {
 }
 
 func (c *Cli) Logout() error {
-	return runCommandSpecs([]commandSpec{tailscaleCommandSpec("logout")})
+	return runTailscale("logout")
 }
 
-func initScriptCommandSpecs(action string) []commandSpec {
-	return []commandSpec{
+func runInitScriptAction(action string) error {
+	for _, command := range initScriptCommands(action) {
+		if err := exec.Command(command.name, command.args...).Run(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func initScriptCommands(action string) []struct {
+	name string
+	args []string
+} {
+	return []struct {
+		name string
+		args []string
+	}{
 		{name: "cp", args: []string{"-f", ScriptBackupPath, ScriptPath}},
 		{name: ScriptPath, args: []string{action}},
 	}
 }
 
-func tailscaleCommandSpec(args ...string) commandSpec {
-	return commandSpec{name: "tailscale", args: args}
+func runTailscale(args ...string) error {
+	return tailscaleCommand(args...).Run()
 }
 
-func commandFromSpec(spec commandSpec) *exec.Cmd {
-	return exec.Command(spec.name, spec.args...)
+func runTailscaleOutput(args ...string) ([]byte, error) {
+	return tailscaleCommand(args...).CombinedOutput()
 }
 
-func runCommandSpecs(commands []commandSpec) error {
-	for _, command := range commands {
-		if err := commandFromSpec(command).Run(); err != nil {
-			return err
-		}
-	}
-	return nil
+func tailscaleCommand(args ...string) *exec.Cmd {
+	return exec.Command("tailscale", args...)
 }

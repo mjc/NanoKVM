@@ -1,9 +1,12 @@
 package tailscale
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestInitScriptCommandSpecs(t *testing.T) {
-	got := initScriptCommandSpecs("restart")
+	got := initScriptCommands("restart")
 	if len(got) != 2 {
 		t.Fatalf("expected 2 commands, got %d", len(got))
 	}
@@ -23,12 +26,12 @@ func TestInitScriptCommandSpecs(t *testing.T) {
 	}
 }
 
-func TestTailscaleCommandSpec(t *testing.T) {
-	got := tailscaleCommandSpec("status", "--json")
-	if got.name != "tailscale" {
-		t.Fatalf("expected command name tailscale, got %q", got.name)
+func TestTailscaleCommand(t *testing.T) {
+	cmd := tailscaleCommand("status", "--json")
+	if filepath.Base(cmd.Path) != "tailscale" {
+		t.Fatalf("expected command basename tailscale, got %q", cmd.Path)
 	}
-	if len(got.args) != 2 || got.args[0] != "status" || got.args[1] != "--json" {
-		t.Fatalf("unexpected command args: %#v", got.args)
+	if len(cmd.Args) != 3 || cmd.Args[0] != "tailscale" || cmd.Args[1] != "status" || cmd.Args[2] != "--json" {
+		t.Fatalf("unexpected command args: %#v", cmd.Args)
 	}
 }
