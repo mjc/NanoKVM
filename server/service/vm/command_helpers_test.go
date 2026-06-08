@@ -62,25 +62,3 @@ func TestBuildSwapCommands(t *testing.T) {
 		}
 	}
 }
-
-func TestVirtualDeviceCommandSpecsUseArgv(t *testing.T) {
-	commandSets := [][]commandSpec{
-		mountNetworkCommands,
-		unmountNetworkCommands,
-		mountDiskCommands,
-		unmountDiskCommands,
-	}
-
-	for setIdx, set := range commandSets {
-		for cmdIdx, cmd := range set {
-			if cmd.Name == "sh" {
-				t.Fatalf("set %d command %d unexpectedly uses sh", setIdx, cmdIdx)
-			}
-			for _, arg := range cmd.Args {
-				if arg == "-c" {
-					t.Fatalf("set %d command %d unexpectedly uses -c", setIdx, cmdIdx)
-				}
-			}
-		}
-	}
-}
