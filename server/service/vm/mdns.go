@@ -59,12 +59,13 @@ func (s *Service) DisableMdns(c *gin.Context) {
 		return
 	}
 
-	if _, err := strconv.Atoi(pid); err != nil {
+	validPID, err := parseAvahiPID(pid)
+	if err != nil {
 		log.Errorf("invalid mdns pid %q: %s", pid, err)
 		rsp.ErrRsp(c, -1, "failed to disable mdns")
 		return
 	}
-	err := exec.Command("kill", "-9", pid).Run()
+	err = exec.Command("kill", "-9", validPID).Run()
 	if err != nil {
 		log.Errorf("failed to stop avahi-daemon: %s", err)
 		rsp.ErrRsp(c, -1, "failed to disable mdns")
@@ -90,4 +91,15 @@ func getAvahiDaemonPid() string {
 	}
 
 	return strings.ReplaceAll(string(content), "\n", "")
+}
+
+func parseAvahiPID(pid string) (string, error) {
+	clean := strings.TrimSpace(pid)
+	if clean == "" {
+		return "", strconv.ErrSyntax
+	}
+	if _, err := strconv.Atoi(clean); err != nil {
+		return "", err
+	}
+	return clean, nil
 }

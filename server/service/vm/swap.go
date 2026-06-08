@@ -81,15 +81,7 @@ func enableSwap(size int64) error {
 		}
 	}
 
-	commands := []struct {
-		name string
-		args []string
-	}{
-		{name: "fallocate", args: []string{"-l", fmt.Sprintf("%dM", size), SwapFile}},
-		{name: "chmod", args: []string{"600", SwapFile}},
-		{name: "mkswap", args: []string{SwapFile}},
-		{name: "swapon", args: []string{SwapFile}},
-	}
+	commands := buildSwapCommands(size)
 
 	for _, command := range commands {
 		err := exec.Command(command.name, command.args...).Run()
@@ -103,6 +95,15 @@ func enableSwap(size int64) error {
 
 	log.Debugf("set swap file size: %d", size)
 	return nil
+}
+
+func buildSwapCommands(size int64) []commandSpec {
+	return []commandSpec{
+		{name: "fallocate", args: []string{"-l", fmt.Sprintf("%dM", size), SwapFile}},
+		{name: "chmod", args: []string{"600", SwapFile}},
+		{name: "mkswap", args: []string{SwapFile}},
+		{name: "swapon", args: []string{SwapFile}},
+	}
 }
 
 func disableSwap() error {
