@@ -5,13 +5,13 @@ import (
 	"io"
 	"mime/multipart"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"NanoKVM-Server/proto"
+	"NanoKVM-Server/utils"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 )
@@ -36,7 +36,7 @@ func (s *Service) OfflineUpdate(c *gin.Context) {
 	log.Debugf("offline update application success")
 
 	time.Sleep(1 * time.Second)
-	_ = exec.Command("/etc/init.d/S95nanokvm", "restart").Run()
+	_ = utils.RestartNanoKVM()
 }
 
 func offlineUpdate(c *gin.Context) error {

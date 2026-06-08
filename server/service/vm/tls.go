@@ -2,7 +2,6 @@ package vm
 
 import (
 	"fmt"
-	"os/exec"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -36,7 +35,7 @@ func (s *Service) SetTls(c *gin.Context) {
 
 	rsp.OkRsp(c)
 
-	_ = exec.Command("/etc/init.d/S95nanokvm", "restart").Run()
+	_ = utils.RestartNanoKVM()
 }
 
 func enableTls() error {

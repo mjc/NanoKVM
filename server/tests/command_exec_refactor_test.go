@@ -39,17 +39,17 @@ func TestRefactoredServiceFilesAvoidShellForm(t *testing.T) {
 
 func TestRefactorUsesArgvStyleInKeyPaths(t *testing.T) {
 	expectations := map[string][]string{
-		"service/application/update.go":          {`exec.Command("/etc/init.d/S95nanokvm", "restart")`},
-		"service/application/update_offline.go":  {`exec.Command("/etc/init.d/S95nanokvm", "restart")`},
-		"service/vm/tls.go":                      {`exec.Command("/etc/init.d/S95nanokvm", "restart")`},
+		"service/application/update.go":          {`utils.RestartNanoKVM()`},
+		"service/application/update_offline.go":  {`utils.RestartNanoKVM()`},
+		"service/vm/tls.go":                      {`utils.RestartNanoKVM()`},
 		"service/vm/ssh.go":                      {`exec.Command(SSHScript, "permanent_on")`, `exec.Command(SSHScript, "permanent_off")`},
 		"service/network/wifi.go":                {`exec.Command(WiFiScript, "stop")`},
-		"service/extensions/tailscale/cli.go":    {`exec.Command("tailscale", "up", "--accept-dns=false")`, `exec.Command("tailscale", "status", "--json")`},
+		"service/extensions/tailscale/cli.go":    {`runCommandSpecs(initScriptCommandSpecs("start"))`, `tailscaleCommandSpec("status", "--json")`},
 		"service/picoclaw/runtime_start_stop.go": {`runPicoclawScript(ctx, scriptPath, "start")`, `exec.CommandContext(ctx, scriptPath, action).CombinedOutput()`},
 		"service/storage/image.go":               {`resetUSBGadgetUDC()`, `os.ReadDir("/sys/class/udc")`},
-		"service/vm/mdns.go":                      {`exec.Command("cp", "-f", AvahiDaemonBackupScript, AvahiDaemonScript)`, `exec.Command("kill", "-9", validPID)`},
-		"service/vm/swap.go":                     {`exec.Command(command.name, command.args...).Run()`, `exec.Command("swapoff", "-a").Run()`},
-		"service/vm/virtual-device.go":           {`exec.Command(command.name, command.args...).Run()`},
+		"service/vm/mdns.go":                     {`exec.Command("cp", "-f", AvahiDaemonBackupScript, AvahiDaemonScript)`, `exec.Command("kill", "-9", validPID)`},
+		"service/vm/swap.go":                     {`runCommandSpecs(commands, 300*time.Millisecond)`, `runCommandSpecs([]commandSpec{{name: "swapoff", args: []string{"-a"}}}, 0)`},
+		"service/vm/virtual-device.go":           {`runCommandSpecs(commands, 0)`},
 		"service/hid/status.go":                  {`exec.Command(USBDevScript, "restart_phy").Run()`},
 	}
 

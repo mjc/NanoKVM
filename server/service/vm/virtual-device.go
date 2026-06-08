@@ -3,7 +3,6 @@ package vm
 import (
 	"errors"
 	"os"
-	"os/exec"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -44,11 +43,6 @@ var (
 		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
 	}
 )
-
-type commandSpec struct {
-	name string
-	args []string
-}
 
 func (s *Service) GetVirtualDevice(c *gin.Context) {
 	var rsp proto.Response
@@ -107,12 +101,9 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 		h.Unlock()
 	}()
 
-	for _, command := range commands {
-		err := exec.Command(command.name, command.args...).Run()
-		if err != nil {
-			rsp.ErrRsp(c, -3, "operation failed")
-			return
-		}
+	if err := runCommandSpecs(commands, 0); err != nil {
+		rsp.ErrRsp(c, -3, "operation failed")
+		return
 	}
 
 	on, _ := isDeviceExist(device)

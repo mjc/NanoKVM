@@ -3,7 +3,6 @@ package vm
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -83,14 +82,9 @@ func enableSwap(size int64) error {
 
 	commands := buildSwapCommands(size)
 
-	for _, command := range commands {
-		err := exec.Command(command.name, command.args...).Run()
-		if err != nil {
-			log.Errorf("failed to execute %s %s: %s", command.name, strings.Join(command.args, " "), err)
-			return err
-		}
-
-		time.Sleep(300 * time.Millisecond)
+	if err := runCommandSpecs(commands, 300*time.Millisecond); err != nil {
+		log.Errorf("failed to configure swap commands: %s", err)
+		return err
 	}
 
 	log.Debugf("set swap file size: %d", size)
@@ -107,7 +101,7 @@ func buildSwapCommands(size int64) []commandSpec {
 }
 
 func disableSwap() error {
-	if err := exec.Command("swapoff", "-a").Run(); err != nil {
+	if err := runCommandSpecs([]commandSpec{{name: "swapoff", args: []string{"-a"}}}, 0); err != nil {
 		log.Errorf("failed to execute swapoff: %s", err)
 		return err
 	}

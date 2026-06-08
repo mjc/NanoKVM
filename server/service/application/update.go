@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,7 +40,7 @@ func (s *Service) Update(c *gin.Context) {
 	// Sleep for a second before restarting the device
 	time.Sleep(1 * time.Second)
 
-	_ = exec.Command("/etc/init.d/S95nanokvm", "restart").Run()
+	_ = utils.RestartNanoKVM()
 }
 
 func update() error {
