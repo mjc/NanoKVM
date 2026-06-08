@@ -30,6 +30,23 @@ func TestRunPassesArgumentsToCommand(t *testing.T) {
 	}
 }
 
+func TestRunExecutesScriptWithoutShebang(t *testing.T) {
+	scriptPath := writeExecutableScript(t, "printf '%s\\n' \"$1\" > \"$2\"\n")
+	outputPath := filepath.Join(t.TempDir(), "result.txt")
+
+	if err := Run(scriptPath, "hello", outputPath); err != nil {
+		t.Fatalf("unexpected run error: %v", err)
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read script output: %v", err)
+	}
+	if string(data) != "hello\n" {
+		t.Fatalf("unexpected script result: %q", string(data))
+	}
+}
+
 func TestRunOutputReturnsCombinedOutput(t *testing.T) {
 	t.Setenv("GO_WANT_COMMAND_HELPER_PROCESS", "1")
 
@@ -46,6 +63,22 @@ func TestRunOutputReturnsCombinedOutput(t *testing.T) {
 	}
 }
 
+func TestRunOutputExecutesScriptWithoutShebang(t *testing.T) {
+	scriptPath := writeExecutableScript(t, "printf 'out:%s\\n' \"$1\"\nprintf 'err:%s\\n' \"$2\" >&2\n")
+
+	output, err := RunOutput(scriptPath, "alpha", "beta")
+	if err != nil {
+		t.Fatalf("unexpected run output error: %v", err)
+	}
+	text := string(output)
+	if !strings.Contains(text, "out:alpha") {
+		t.Fatalf("expected stdout in combined output, got %q", text)
+	}
+	if !strings.Contains(text, "err:beta") {
+		t.Fatalf("expected stderr in combined output, got %q", text)
+	}
+}
+
 func TestRunOutputContextHonorsCancellation(t *testing.T) {
 	t.Setenv("GO_WANT_COMMAND_HELPER_PROCESS", "1")
 
@@ -58,6 +91,18 @@ func TestRunOutputContextHonorsCancellation(t *testing.T) {
 	}
 	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("expected deadline exceeded context, got %v", ctx.Err())
+	}
+}
+
+func TestRunOutputContextExecutesScriptWithoutShebang(t *testing.T) {
+	scriptPath := writeExecutableScript(t, "printf 'ctx:%s\\n' \"$1\"\n")
+
+	output, err := RunOutputContext(context.Background(), scriptPath, "value")
+	if err != nil {
+		t.Fatalf("unexpected run output context error: %v", err)
+	}
+	if string(output) != "ctx:value\n" {
+		t.Fatalf("unexpected context script output: %q", string(output))
 	}
 }
 
@@ -81,6 +126,16 @@ func TestRunSequenceStopsAfterFailure(t *testing.T) {
 	if string(data) != "first\nsecond\n" {
 		t.Fatalf("unexpected trace after failure: %q", string(data))
 	}
+}
+
+func writeExecutableScript(t *testing.T, content string) string {
+	t.Helper()
+
+	scriptPath := filepath.Join(t.TempDir(), "script")
+	if err := os.WriteFile(scriptPath, []byte(content), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	return scriptPath
 }
 
 func TestCommandHelperProcess(t *testing.T) {
