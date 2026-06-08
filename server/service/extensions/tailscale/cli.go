@@ -71,23 +71,7 @@ func (c *Cli) Status() (*TsStatus, error) {
 		return nil, err
 	}
 
-	// output is not in standard json format
-	if outputStr := string(output); !strings.HasPrefix(outputStr, "{") {
-		index := strings.Index(outputStr, "{")
-		if index == -1 {
-			return nil, errors.New("unknown output")
-		}
-
-		output = []byte(outputStr[index:])
-	}
-
-	var status TsStatus
-	err = json.Unmarshal(output, &status)
-	if err != nil {
-		return nil, err
-	}
-
-	return &status, nil
+	return parseStatusOutput(output)
 }
 
 func (c *Cli) Login() (string, error) {
@@ -112,9 +96,7 @@ func (c *Cli) Login() (string, error) {
 			return "", err
 		}
 
-		if strings.Contains(line, "https") {
-			reg := regexp.MustCompile(`\s+`)
-			url := reg.ReplaceAllString(line, "")
+		if url := extractLoginURL(line); url != "" {
 			return url, nil
 		}
 	}
@@ -145,4 +127,32 @@ func runTailscaleOutput(args ...string) ([]byte, error) {
 
 func tailscaleCommand(args ...string) *exec.Cmd {
 	return utils.Command("tailscale", args...)
+}
+
+func parseStatusOutput(output []byte) (*TsStatus, error) {
+	outputStr := string(output)
+	if !strings.HasPrefix(outputStr, "{") {
+		index := strings.Index(outputStr, "{")
+		if index == -1 {
+			return nil, errors.New("unknown output")
+		}
+
+		output = []byte(outputStr[index:])
+	}
+
+	var status TsStatus
+	if err := json.Unmarshal(output, &status); err != nil {
+		return nil, err
+	}
+
+	return &status, nil
+}
+
+func extractLoginURL(line string) string {
+	if !strings.Contains(line, "https") {
+		return ""
+	}
+
+	reg := regexp.MustCompile(`\s+`)
+	return reg.ReplaceAllString(line, "")
 }
