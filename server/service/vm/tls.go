@@ -36,7 +36,7 @@ func (s *Service) SetTls(c *gin.Context) {
 
 	rsp.OkRsp(c)
 
-	_ = exec.Command("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
+	_ = exec.Command("/etc/init.d/S95nanokvm", "restart").Run()
 }
 
 func enableTls() error {

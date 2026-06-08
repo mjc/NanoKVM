@@ -18,32 +18,37 @@ const (
 )
 
 var (
-	mountNetworkCommands = []string{
-		"touch /boot/usb.rndis0",
-		"/etc/init.d/S03usbdev stop",
-		"/etc/init.d/S03usbdev start",
+	mountNetworkCommands = []commandSpec{
+		{name: "touch", args: []string{"/boot/usb.rndis0"}},
+		{name: "/etc/init.d/S03usbdev", args: []string{"stop"}},
+		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
 	}
 
-	unmountNetworkCommands = []string{
-		"/etc/init.d/S03usbdev stop",
-		"rm -rf /sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0",
-		"rm /boot/usb.rndis0",
-		"/etc/init.d/S03usbdev start",
+	unmountNetworkCommands = []commandSpec{
+		{name: "/etc/init.d/S03usbdev", args: []string{"stop"}},
+		{name: "rm", args: []string{"-rf", "/sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0"}},
+		{name: "rm", args: []string{"/boot/usb.rndis0"}},
+		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
 	}
 
-	mountDiskCommands = []string{
-		"touch /boot/usb.disk0",
-		"/etc/init.d/S03usbdev stop",
-		"/etc/init.d/S03usbdev start",
+	mountDiskCommands = []commandSpec{
+		{name: "touch", args: []string{"/boot/usb.disk0"}},
+		{name: "/etc/init.d/S03usbdev", args: []string{"stop"}},
+		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
 	}
 
-	unmountDiskCommands = []string{
-		"/etc/init.d/S03usbdev stop",
-		"rm -rf /sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0",
-		"rm /boot/usb.disk0",
-		"/etc/init.d/S03usbdev start",
+	unmountDiskCommands = []commandSpec{
+		{name: "/etc/init.d/S03usbdev", args: []string{"stop"}},
+		{name: "rm", args: []string{"-rf", "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0"}},
+		{name: "rm", args: []string{"/boot/usb.disk0"}},
+		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
 	}
 )
+
+type commandSpec struct {
+	name string
+	args []string
+}
 
 func (s *Service) GetVirtualDevice(c *gin.Context) {
 	var rsp proto.Response
@@ -68,7 +73,7 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 	}
 
 	var device string
-	var commands []string
+	var commands []commandSpec
 
 	switch req.Device {
 	case "network":
@@ -103,7 +108,7 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 	}()
 
 	for _, command := range commands {
-		err := exec.Command("sh", "-c", command).Run()
+		err := exec.Command(command.name, command.args...).Run()
 		if err != nil {
 			rsp.ErrRsp(c, -3, "operation failed")
 			return

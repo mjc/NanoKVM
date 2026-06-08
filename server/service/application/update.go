@@ -41,7 +41,7 @@ func (s *Service) Update(c *gin.Context) {
 	// Sleep for a second before restarting the device
 	time.Sleep(1 * time.Second)
 
-	_ = exec.Command("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
+	_ = exec.Command("/etc/init.d/S95nanokvm", "restart").Run()
 }
 
 func update() error {

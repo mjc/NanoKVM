@@ -3,7 +3,6 @@ package vm
 import (
 	"NanoKVM-Server/proto"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 
@@ -28,8 +27,7 @@ func (s *Service) GetSSHState(c *gin.Context) {
 func (s *Service) EnableSSH(c *gin.Context) {
 	var rsp proto.Response
 
-	command := fmt.Sprintf("%s permanent_on", SSHScript)
-	err := exec.Command("sh", "-c", command).Run()
+	err := exec.Command(SSHScript, "permanent_on").Run()
 	if err != nil {
 		log.Errorf("failed to run SSH script: %s", err)
 		rsp.ErrRsp(c, -1, "operation failed")
@@ -43,8 +41,7 @@ func (s *Service) EnableSSH(c *gin.Context) {
 func (s *Service) DisableSSH(c *gin.Context) {
 	var rsp proto.Response
 
-	command := fmt.Sprintf("%s permanent_off", SSHScript)
-	err := exec.Command("sh", "-c", command).Run()
+	err := exec.Command(SSHScript, "permanent_off").Run()
 	if err != nil {
 		log.Errorf("failed to run SSH script: %s", err)
 		rsp.ErrRsp(c, -1, "operation failed")
