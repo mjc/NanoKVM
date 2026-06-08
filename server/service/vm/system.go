@@ -13,7 +13,7 @@ func (s *Service) Reboot(c *gin.Context) {
 
 	log.Println("reboot system...")
 
-	err := utils.Run("reboot")
+	err := utils.Reboot()
 	if err != nil {
 		rsp.ErrRsp(c, -1, "operation failed")
 		log.Errorf("failed to reboot: %s", err)

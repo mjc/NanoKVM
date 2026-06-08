@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"NanoKVM-Server/proto"
+	"NanoKVM-Server/utils"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -82,7 +83,7 @@ func enableSwap(size int64) error {
 
 	commands := buildSwapCommands(size)
 
-	if err := runCommandSpecs(commands, 300*time.Millisecond); err != nil {
+	if err := utils.RunSequenceWithDelay(commands, 300*time.Millisecond); err != nil {
 		log.Errorf("failed to configure swap commands: %s", err)
 		return err
 	}
@@ -91,8 +92,8 @@ func enableSwap(size int64) error {
 	return nil
 }
 
-func buildSwapCommands(size int64) []commandSpec {
-	return []commandSpec{
+func buildSwapCommands(size int64) []utils.CommandSpec {
+	return []utils.CommandSpec{
 		{Name: "fallocate", Args: []string{"-l", fmt.Sprintf("%dM", size), SwapFile}},
 		{Name: "chmod", Args: []string{"600", SwapFile}},
 		{Name: "mkswap", Args: []string{SwapFile}},
@@ -101,7 +102,7 @@ func buildSwapCommands(size int64) []commandSpec {
 }
 
 func disableSwap() error {
-	if err := runCommandSpecs([]commandSpec{{Name: "swapoff", Args: []string{"-a"}}}, 0); err != nil {
+	if err := utils.RunSequence([]utils.CommandSpec{{Name: "swapoff", Args: []string{"-a"}}}); err != nil {
 		log.Errorf("failed to execute swapoff: %s", err)
 		return err
 	}

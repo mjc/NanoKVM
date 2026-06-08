@@ -27,7 +27,7 @@ func (s *Service) GetSSHState(c *gin.Context) {
 func (s *Service) EnableSSH(c *gin.Context) {
 	var rsp proto.Response
 
-	err := utils.Run(SSHScript, "permanent_on")
+	err := utils.RunInitScriptAction(SSHScript, "permanent_on")
 	if err != nil {
 		log.Errorf("failed to run SSH script: %s", err)
 		rsp.ErrRsp(c, -1, "operation failed")
@@ -41,7 +41,7 @@ func (s *Service) EnableSSH(c *gin.Context) {
 func (s *Service) DisableSSH(c *gin.Context) {
 	var rsp proto.Response
 
-	err := utils.Run(SSHScript, "permanent_off")
+	err := utils.RunInitScriptAction(SSHScript, "permanent_off")
 	if err != nil {
 		log.Errorf("failed to run SSH script: %s", err)
 		rsp.ErrRsp(c, -1, "operation failed")

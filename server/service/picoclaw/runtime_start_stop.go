@@ -250,5 +250,5 @@ func isProcessRunning(procRoot string, binName string) (bool, error) {
 }
 
 func runPicoclawScript(ctx context.Context, scriptPath string, action string) ([]byte, error) {
-	return utils.RunOutputContext(ctx, scriptPath, action)
+	return utils.RunInitScriptActionOutputContext(ctx, scriptPath, action)
 }

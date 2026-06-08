@@ -107,10 +107,7 @@ func (c *Cli) Logout() error {
 }
 
 func runInitScriptAction(action string) error {
-	if err := utils.CopyFile(ScriptBackupPath, ScriptPath); err != nil {
-		return err
-	}
-	return utils.Run(ScriptPath, action)
+	return utils.RestoreAndRunInitScriptAction(ScriptPath, ScriptBackupPath, action)
 }
 
 func runTailscale(args ...string) error {
