@@ -3,7 +3,6 @@ package storage
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -128,19 +127,10 @@ func (s *Service) MountImage(c *gin.Context) {
 		h.Unlock()
 	}()
 
-	// reset usb
-	commands := []string{
-		"echo > /sys/kernel/config/usb_gadget/g0/UDC",
-		"ls /sys/class/udc/ | cat > /sys/kernel/config/usb_gadget/g0/UDC",
-	}
-
-	for _, command := range commands {
-		err := exec.Command("sh", "-c", command).Run()
-		if err != nil {
-			rsp.ErrRsp(c, -2, "execute command failed")
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+	if err := resetUSBGadgetUDC(); err != nil {
+		log.Errorf("reset usb gadget failed: %v", err)
+		rsp.ErrRsp(c, -2, "reset usb gadget failed")
+		return
 	}
 
 	rsp.OkRsp(c)
@@ -217,4 +207,34 @@ func (s *Service) DeleteImage(c *gin.Context) {
 
 	rsp.OkRsp(c)
 	log.Debugf("delete image %s success", req.File)
+}
+
+func resetUSBGadgetUDC() error {
+	return resetUSBGadgetUDCPaths("/sys/kernel/config/usb_gadget/g0/UDC", "/sys/class/udc")
+}
+
+func resetUSBGadgetUDCPaths(udcPath string, classDir string) error {
+	return resetUSBGadgetUDCPathsWithWriter(udcPath, classDir, os.WriteFile)
+}
+
+func resetUSBGadgetUDCPathsWithWriter(udcPath string, classDir string, writeFile func(string, []byte, os.FileMode) error) error {
+	if err := writeFile(udcPath, []byte("\n"), 0o644); err != nil {
+		return err
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	entries, err := os.ReadDir(classDir)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("no UDC controller found")
+	}
+
+	controller := entries[0].Name()
+	if err := writeFile(udcPath, []byte(controller), 0o644); err != nil {
+		return err
+	}
+	time.Sleep(100 * time.Millisecond)
+	return nil
 }

@@ -3,8 +3,8 @@ package vm
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
+	"syscall"
 
 	"NanoKVM-Server/proto"
 
@@ -35,7 +35,7 @@ func (s *Service) SetHostname(c *gin.Context) {
 
 	oldHostname := strings.Replace(string(dataRead), "\n", "", -1)
 
-	if (oldHostname != req.Hostname) {
+	if oldHostname != req.Hostname {
 		dataRead, err = os.ReadFile(EtcHosts)
 		if err != nil {
 			rsp.ErrRsp(c, -1, "read Hosts failed")
@@ -62,10 +62,14 @@ func (s *Service) SetHostname(c *gin.Context) {
 		return
 	}
 
+	if err := syscall.Sethostname(data); err != nil {
+		log.Errorf("failed to apply hostname: %s", err)
+		rsp.ErrRsp(c, -4, "failed to apply hostname")
+		return
+	}
+
 	rsp.OkRsp(c)
 	log.Debugf("set Hostname: %s", req.Hostname)
-
-	_ = exec.Command("hostname", "-F", EtcHostname).Run()
 }
 
 func (s *Service) GetHostname(c *gin.Context) {

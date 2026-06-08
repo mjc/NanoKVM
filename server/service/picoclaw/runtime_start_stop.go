@@ -1,6 +1,7 @@
 package picoclaw
 
 import (
+	"NanoKVM-Server/utils"
 	"context"
 	"fmt"
 	"os"
@@ -62,7 +63,7 @@ func (s *Service) startRuntime() (string, string, *PicoclawError) {
 	ctx, cancel := context.WithTimeout(context.Background(), picoclawStartTimeout)
 	defer cancel()
 
-	output, execErr := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput()
+	output, execErr := runPicoclawScript(ctx, scriptPath, "start")
 	trimmedOutput := strings.TrimSpace(string(output))
 	if execErr != nil {
 		s.runtime.Update(func(status *RuntimeStatus) {
@@ -108,7 +109,7 @@ func (s *Service) stopRuntime() (string, string, *PicoclawError) {
 	ctx, cancel := context.WithTimeout(context.Background(), picoclawStopTimeout)
 	defer cancel()
 
-	output, execErr := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput()
+	output, execErr := runPicoclawScript(ctx, scriptPath, "stop")
 	trimmedOutput := strings.TrimSpace(string(output))
 	if execErr != nil {
 		status := RuntimeStatus{
@@ -183,11 +184,10 @@ func runPicoclawOnboard() (string, *PicoclawError) {
 		return "", newPicoclawError(CodeRuntimeUnavailable, err.Error())
 	}
 
-	command := scriptPath + " onboard"
 	ctx, cancel := context.WithTimeout(context.Background(), picoclawOnboardTimeout)
 	defer cancel()
 
-	output, execErr := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput()
+	output, execErr := runPicoclawScript(ctx, scriptPath, "onboard")
 	trimmedOutput := strings.TrimSpace(string(output))
 	if execErr != nil {
 		if trimmedOutput == "" {
@@ -223,6 +223,9 @@ func isRuntimeRunning() (bool, error) {
 		}
 		return false, err
 	}
-
 	return true, nil
+}
+
+func runPicoclawScript(ctx context.Context, scriptPath string, action string) ([]byte, error) {
+	return utils.RunOutputContext(ctx, scriptPath, action)
 }

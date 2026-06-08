@@ -2,11 +2,11 @@ package hid
 
 import (
 	"NanoKVM-Server/proto"
+	"NanoKVM-Server/utils"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -85,7 +85,7 @@ func (s *Service) SetHidMode(c *gin.Context) {
 
 	log.Println("reboot system...")
 	time.Sleep(500 * time.Millisecond)
-	_ = exec.Command("reboot").Run()
+	_ = utils.Run("reboot")
 }
 
 func (s *Service) ResetHid(c *gin.Context) {
@@ -120,8 +120,7 @@ func ResetUSBPHY() error {
 	h.CloseNoLock()
 	defer h.Unlock()
 
-	command := fmt.Sprintf("%s restart_phy", USBDevScript)
-	if err := exec.Command("sh", "-c", command).Run(); err != nil {
+	if err := utils.Run(USBDevScript, "restart_phy"); err != nil {
 		return fmt.Errorf("restart usb phy: %w", err)
 	}
 

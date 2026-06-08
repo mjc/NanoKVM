@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"NanoKVM-Server/proto"
 
@@ -97,7 +97,7 @@ func (s *Service) SetDNS(c *gin.Context) {
 		return
 	}
 
-	_ = exec.Command("sync").Run()
+	syscall.Sync()
 
 	rsp.OkRsp(c)
 	log.Debugf("set dns config: mode=%s servers=%v", req.Mode, req.Servers)

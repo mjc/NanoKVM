@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"NanoKVM-Server/proto"
+	"NanoKVM-Server/utils"
 )
 
 const (
@@ -34,9 +34,7 @@ func (s *Service) WakeOnLAN(c *gin.Context) {
 		return
 	}
 
-	cmd := exec.Command("ether-wake", "-b", mac)
-
-	output, err := cmd.CombinedOutput()
+	output, err := utils.RunOutput("ether-wake", "-b", mac)
 	if err != nil {
 		log.Errorf("failed to wake on lan: %s", err)
 		rsp.ErrRsp(c, -3, string(output))

@@ -5,9 +5,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"net/url"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 )
@@ -16,6 +15,8 @@ const (
 	ScriptPath       = "/etc/init.d/S98tailscaled"
 	ScriptBackupPath = "/kvmapp/system/init.d/S98tailscaled"
 )
+
+var loginURLPattern = regexp.MustCompile(`https://[^\s]+`)
 
 type Cli struct{}
 
@@ -43,29 +44,15 @@ func (c *Cli) Start() error {
 		}
 	}
 
-	commands := []string{
-		fmt.Sprintf("cp -f %s %s", ScriptBackupPath, ScriptPath),
-		fmt.Sprintf("%s start", ScriptPath),
-	}
-
-	command := strings.Join(commands, " && ")
-	return exec.Command("sh", "-c", command).Run()
+	return runInitScriptAction("start")
 }
 
 func (c *Cli) Restart() error {
-	commands := []string{
-		fmt.Sprintf("cp -f %s %s", ScriptBackupPath, ScriptPath),
-		fmt.Sprintf("%s restart", ScriptPath),
-	}
-
-	command := strings.Join(commands, " && ")
-	return exec.Command("sh", "-c", command).Run()
+	return runInitScriptAction("restart")
 }
 
 func (c *Cli) Stop() error {
-	command := fmt.Sprintf("%s stop", ScriptPath)
-	err := exec.Command("sh", "-c", command).Run()
-	if err != nil {
+	if err := utils.Run(ScriptPath, "stop"); err != nil {
 		return err
 	}
 
@@ -73,46 +60,24 @@ func (c *Cli) Stop() error {
 }
 
 func (c *Cli) Up() error {
-	command := "tailscale up --accept-dns=false"
-	return exec.Command("sh", "-c", command).Run()
+	return utils.Run("tailscale", "up", "--accept-dns=false")
 }
 
 func (c *Cli) Down() error {
-	command := "tailscale down"
-	return exec.Command("sh", "-c", command).Run()
+	return utils.Run("tailscale", "down")
 }
 
 func (c *Cli) Status() (*TsStatus, error) {
-	command := "tailscale status --json"
-	cmd := exec.Command("sh", "-c", command)
-
-	output, err := cmd.CombinedOutput()
+	output, err := utils.RunOutput("tailscale", "status", "--json")
 	if err != nil {
 		return nil, err
 	}
 
-	// output is not in standard json format
-	if outputStr := string(output); !strings.HasPrefix(outputStr, "{") {
-		index := strings.Index(outputStr, "{")
-		if index == -1 {
-			return nil, errors.New("unknown output")
-		}
-
-		output = []byte(outputStr[index:])
-	}
-
-	var status TsStatus
-	err = json.Unmarshal(output, &status)
-	if err != nil {
-		return nil, err
-	}
-
-	return &status, nil
+	return parseStatusOutput(output)
 }
 
 func (c *Cli) Login() (string, error) {
-	command := "tailscale login --accept-dns=false --timeout=10m"
-	cmd := exec.Command("sh", "-c", command)
+	cmd := utils.Command("tailscale", "login", "--accept-dns=false", "--timeout=10m")
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -133,15 +98,49 @@ func (c *Cli) Login() (string, error) {
 			return "", err
 		}
 
-		if strings.Contains(line, "https") {
-			reg := regexp.MustCompile(`\s+`)
-			url := reg.ReplaceAllString(line, "")
+		if url := extractLoginURL(line); url != "" {
 			return url, nil
 		}
 	}
 }
 
 func (c *Cli) Logout() error {
-	command := "tailscale logout"
-	return exec.Command("sh", "-c", command).Run()
+	return utils.Run("tailscale", "logout")
+}
+
+func runInitScriptAction(action string) error {
+	return utils.RestoreAndRunInitScriptAction(ScriptPath, ScriptBackupPath, action)
+}
+
+func parseStatusOutput(output []byte) (*TsStatus, error) {
+	outputStr := string(output)
+	if !strings.HasPrefix(outputStr, "{") {
+		index := strings.Index(outputStr, "{")
+		if index == -1 {
+			return nil, errors.New("unknown output")
+		}
+
+		output = []byte(outputStr[index:])
+	}
+
+	var status TsStatus
+	if err := json.Unmarshal(output, &status); err != nil {
+		return nil, err
+	}
+
+	return &status, nil
+}
+
+func extractLoginURL(line string) string {
+	candidate := loginURLPattern.FindString(line)
+	if candidate == "" {
+		return ""
+	}
+
+	parsed, err := url.ParseRequestURI(candidate)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return ""
+	}
+
+	return candidate
 }

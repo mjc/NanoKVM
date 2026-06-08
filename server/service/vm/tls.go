@@ -2,7 +2,6 @@ package vm
 
 import (
 	"fmt"
-	"os/exec"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -36,7 +35,9 @@ func (s *Service) SetTls(c *gin.Context) {
 
 	rsp.OkRsp(c)
 
-	_ = exec.Command("sh", "-c", "/etc/init.d/S95nanokvm restart").Run()
+	if err := utils.Run("/etc/init.d/S95nanokvm", "restart"); err != nil {
+		log.Errorf("failed to restart NanoKVM after TLS update: %v", err)
+	}
 }
 
 func enableTls() error {

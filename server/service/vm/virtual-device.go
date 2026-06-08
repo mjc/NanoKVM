@@ -3,46 +3,21 @@ package vm
 import (
 	"errors"
 	"os"
-	"os/exec"
-
-	"github.com/gin-gonic/gin"
-	log "github.com/sirupsen/logrus"
 
 	"NanoKVM-Server/proto"
 	"NanoKVM-Server/service/hid"
+	"NanoKVM-Server/utils"
+
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
-	virtualNetwork = "/boot/usb.rndis0"
-	virtualDisk    = "/boot/usb.disk0"
-)
-
-var (
-	mountNetworkCommands = []string{
-		"touch /boot/usb.rndis0",
-		"/etc/init.d/S03usbdev stop",
-		"/etc/init.d/S03usbdev start",
-	}
-
-	unmountNetworkCommands = []string{
-		"/etc/init.d/S03usbdev stop",
-		"rm -rf /sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0",
-		"rm /boot/usb.rndis0",
-		"/etc/init.d/S03usbdev start",
-	}
-
-	mountDiskCommands = []string{
-		"touch /boot/usb.disk0",
-		"/etc/init.d/S03usbdev stop",
-		"/etc/init.d/S03usbdev start",
-	}
-
-	unmountDiskCommands = []string{
-		"/etc/init.d/S03usbdev stop",
-		"rm -rf /sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0",
-		"rm /boot/usb.disk0",
-		"/etc/init.d/S03usbdev start",
-	}
+	virtualNetwork        = "/boot/usb.rndis0"
+	virtualDisk           = "/boot/usb.disk0"
+	usbDevScript          = "/etc/init.d/S03usbdev"
+	networkConfigPath     = "/sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0"
+	massStorageConfigPath = "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0"
 )
 
 func (s *Service) GetVirtualDevice(c *gin.Context) {
@@ -68,27 +43,22 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 	}
 
 	var device string
-	var commands []string
+	var configPath string
+	var mount bool
 
 	switch req.Device {
 	case "network":
 		device = virtualNetwork
+		configPath = networkConfigPath
 
 		exist, _ := isDeviceExist(device)
-		if !exist {
-			commands = mountNetworkCommands
-		} else {
-			commands = unmountNetworkCommands
-		}
+		mount = !exist
 	case "disk":
 		device = virtualDisk
+		configPath = massStorageConfigPath
 
 		exist, _ := isDeviceExist(device)
-		if !exist {
-			commands = mountDiskCommands
-		} else {
-			commands = unmountDiskCommands
-		}
+		mount = !exist
 	default:
 		rsp.ErrRsp(c, -2, "invalid arguments")
 		return
@@ -102,12 +72,9 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 		h.Unlock()
 	}()
 
-	for _, command := range commands {
-		err := exec.Command("sh", "-c", command).Run()
-		if err != nil {
-			rsp.ErrRsp(c, -3, "operation failed")
-			return
-		}
+	if err := setVirtualDevice(device, configPath, mount); err != nil {
+		rsp.ErrRsp(c, -3, "operation failed")
+		return
 	}
 
 	on, _ := isDeviceExist(device)
@@ -131,4 +98,45 @@ func isDeviceExist(device string) (bool, error) {
 
 	log.Errorf("check file %s err: %s", device, err)
 	return false, err
+}
+
+func setVirtualDevice(device string, configPath string, mount bool) error {
+	if mount {
+		if err := os.WriteFile(device, nil, 0o644); err != nil {
+			return err
+		}
+		if err := restartUSBDeviceScript(); err != nil {
+			_ = os.Remove(device)
+			return err
+		}
+		return nil
+	}
+
+	if err := utils.Run(usbDevScript, "stop"); err != nil {
+		return err
+	}
+	restartNeeded := true
+	defer func() {
+		if restartNeeded {
+			_ = utils.Run(usbDevScript, "start")
+		}
+	}()
+	if err := os.RemoveAll(configPath); err != nil {
+		return err
+	}
+	if err := os.Remove(device); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := utils.Run(usbDevScript, "start"); err != nil {
+		return err
+	}
+	restartNeeded = false
+	return nil
+}
+
+func restartUSBDeviceScript() error {
+	if err := utils.Run(usbDevScript, "stop"); err != nil {
+		return err
+	}
+	return utils.Run(usbDevScript, "start")
 }

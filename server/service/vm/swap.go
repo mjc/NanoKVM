@@ -3,11 +3,11 @@ package vm
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"NanoKVM-Server/proto"
+	"NanoKVM-Server/utils"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -81,30 +81,28 @@ func enableSwap(size int64) error {
 		}
 	}
 
-	commands := []string{
-		fmt.Sprintf("fallocate -l %dM %s", size, SwapFile),
-		fmt.Sprintf("chmod 600 %s", SwapFile),
-		fmt.Sprintf("mkswap %s", SwapFile),
-		fmt.Sprintf("swapon %s", SwapFile),
-	}
+	commands := buildSwapCommands(size)
 
-	for _, command := range commands {
-		err := exec.Command("sh", "-c", command).Run()
-		if err != nil {
-			log.Errorf("failed to execute %s: %s", command, err)
-			return err
-		}
-
-		time.Sleep(300 * time.Millisecond)
+	if err := utils.RunSequenceWithDelay(commands, 300*time.Millisecond); err != nil {
+		log.Errorf("failed to configure swap commands: %s", err)
+		return err
 	}
 
 	log.Debugf("set swap file size: %d", size)
 	return nil
 }
 
+func buildSwapCommands(size int64) []utils.CommandSpec {
+	return []utils.CommandSpec{
+		{Name: "fallocate", Args: []string{"-l", fmt.Sprintf("%dM", size), SwapFile}},
+		{Name: "chmod", Args: []string{"600", SwapFile}},
+		{Name: "mkswap", Args: []string{SwapFile}},
+		{Name: "swapon", Args: []string{SwapFile}},
+	}
+}
+
 func disableSwap() error {
-	command := "swapoff -a"
-	if err := exec.Command("sh", "-c", command).Run(); err != nil {
+	if err := utils.RunSequence([]utils.CommandSpec{{Name: "swapoff", Args: []string{"-a"}}}); err != nil {
 		log.Errorf("failed to execute swapoff: %s", err)
 		return err
 	}

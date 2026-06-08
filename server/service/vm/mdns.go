@@ -2,10 +2,11 @@ package vm
 
 import (
 	"NanoKVM-Server/proto"
-	"fmt"
+	"NanoKVM-Server/utils"
 	"os"
-	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -36,14 +37,7 @@ func (s *Service) EnableMdns(c *gin.Context) {
 		return
 	}
 
-	commands := []string{
-		fmt.Sprintf("cp -f %s %s", AvahiDaemonBackupScript, AvahiDaemonScript),
-		fmt.Sprintf("%s start", AvahiDaemonScript),
-	}
-
-	command := strings.Join(commands, " && ")
-	err := exec.Command("sh", "-c", command).Run()
-	if err != nil {
+	if err := utils.RestoreAndRunInitScriptAction(AvahiDaemonScript, AvahiDaemonBackupScript, "start"); err != nil {
 		log.Errorf("failed to start avahi-daemon: %s", err)
 		rsp.ErrRsp(c, -1, "failed to enable mdns")
 		return
@@ -62,8 +56,20 @@ func (s *Service) DisableMdns(c *gin.Context) {
 		return
 	}
 
-	command := fmt.Sprintf("kill -9 %s", pid)
-	err := exec.Command("sh", "-c", command).Run()
+	validPID, err := parseAvahiPID(pid)
+	if err != nil {
+		log.Errorf("invalid mdns pid %q: %s", pid, err)
+		rsp.ErrRsp(c, -1, "failed to disable mdns")
+		return
+	}
+	pidValue, err := strconv.Atoi(validPID)
+	if err != nil {
+		log.Errorf("invalid mdns pid %q: %s", validPID, err)
+		rsp.ErrRsp(c, -1, "failed to disable mdns")
+		return
+	}
+
+	err = syscall.Kill(pidValue, syscall.SIGKILL)
 	if err != nil {
 		log.Errorf("failed to stop avahi-daemon: %s", err)
 		rsp.ErrRsp(c, -1, "failed to disable mdns")
@@ -89,4 +95,19 @@ func getAvahiDaemonPid() string {
 	}
 
 	return strings.ReplaceAll(string(content), "\n", "")
+}
+
+func parseAvahiPID(pid string) (string, error) {
+	clean := strings.TrimSpace(pid)
+	if clean == "" {
+		return "", strconv.ErrSyntax
+	}
+	pidValue, err := strconv.Atoi(clean)
+	if err != nil {
+		return "", err
+	}
+	if pidValue <= 0 {
+		return "", strconv.ErrSyntax
+	}
+	return clean, nil
 }
