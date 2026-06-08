@@ -128,7 +128,7 @@ func (s *Service) MountImage(c *gin.Context) {
 	}()
 
 	if err := resetUSBGadgetUDC(); err != nil {
-		rsp.ErrRsp(c, -2, "execute command failed")
+		rsp.ErrRsp(c, -2, "reset usb gadget failed")
 		return
 	}
 
