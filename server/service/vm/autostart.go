@@ -10,7 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const autostartDirectory = "/etc/kvm/autostart"
+var autostartDirectory = "/etc/kvm/autostart"
 const maxAutostartContent = 64 * 1024
 
 func (s *Service) GetAutostart(c *gin.Context) {
