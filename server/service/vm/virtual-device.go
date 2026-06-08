@@ -4,44 +4,20 @@ import (
 	"errors"
 	"os"
 
-	"github.com/gin-gonic/gin"
-	log "github.com/sirupsen/logrus"
-
 	"NanoKVM-Server/proto"
 	"NanoKVM-Server/service/hid"
+	"NanoKVM-Server/utils"
+
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
-	virtualNetwork = "/boot/usb.rndis0"
-	virtualDisk    = "/boot/usb.disk0"
-)
-
-var (
-	mountNetworkCommands = []commandSpec{
-		{Name: "touch", Args: []string{"/boot/usb.rndis0"}},
-		{Name: "/etc/init.d/S03usbdev", Args: []string{"stop"}},
-		{Name: "/etc/init.d/S03usbdev", Args: []string{"start"}},
-	}
-
-	unmountNetworkCommands = []commandSpec{
-		{Name: "/etc/init.d/S03usbdev", Args: []string{"stop"}},
-		{Name: "rm", Args: []string{"-rf", "/sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0"}},
-		{Name: "rm", Args: []string{"/boot/usb.rndis0"}},
-		{Name: "/etc/init.d/S03usbdev", Args: []string{"start"}},
-	}
-
-	mountDiskCommands = []commandSpec{
-		{Name: "touch", Args: []string{"/boot/usb.disk0"}},
-		{Name: "/etc/init.d/S03usbdev", Args: []string{"stop"}},
-		{Name: "/etc/init.d/S03usbdev", Args: []string{"start"}},
-	}
-
-	unmountDiskCommands = []commandSpec{
-		{Name: "/etc/init.d/S03usbdev", Args: []string{"stop"}},
-		{Name: "rm", Args: []string{"-rf", "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0"}},
-		{Name: "rm", Args: []string{"/boot/usb.disk0"}},
-		{Name: "/etc/init.d/S03usbdev", Args: []string{"start"}},
-	}
+	virtualNetwork        = "/boot/usb.rndis0"
+	virtualDisk           = "/boot/usb.disk0"
+	usbDevScript          = "/etc/init.d/S03usbdev"
+	networkConfigPath     = "/sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0"
+	massStorageConfigPath = "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0"
 )
 
 func (s *Service) GetVirtualDevice(c *gin.Context) {
@@ -67,7 +43,7 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 	}
 
 	var device string
-	var commands []commandSpec
+	var action func() error
 
 	switch req.Device {
 	case "network":
@@ -75,18 +51,18 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 
 		exist, _ := isDeviceExist(device)
 		if !exist {
-			commands = mountNetworkCommands
+			action = mountVirtualDeviceNetwork
 		} else {
-			commands = unmountNetworkCommands
+			action = unmountVirtualDeviceNetwork
 		}
 	case "disk":
 		device = virtualDisk
 
 		exist, _ := isDeviceExist(device)
 		if !exist {
-			commands = mountDiskCommands
+			action = mountVirtualDeviceDisk
 		} else {
-			commands = unmountDiskCommands
+			action = unmountVirtualDeviceDisk
 		}
 	default:
 		rsp.ErrRsp(c, -2, "invalid arguments")
@@ -101,7 +77,7 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 		h.Unlock()
 	}()
 
-	if err := runCommandSpecs(commands, 0); err != nil {
+	if err := action(); err != nil {
 		rsp.ErrRsp(c, -3, "operation failed")
 		return
 	}
@@ -127,4 +103,55 @@ func isDeviceExist(device string) (bool, error) {
 
 	log.Errorf("check file %s err: %s", device, err)
 	return false, err
+}
+
+func mountVirtualDeviceNetwork() error {
+	if err := ensureVirtualDeviceFile(virtualNetwork); err != nil {
+		return err
+	}
+	return restartUSBDeviceScript()
+}
+
+func unmountVirtualDeviceNetwork() error {
+	if err := utils.Run(usbDevScript, "stop"); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(networkConfigPath); err != nil {
+		return err
+	}
+	if err := os.Remove(virtualNetwork); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return utils.Run(usbDevScript, "start")
+}
+
+func mountVirtualDeviceDisk() error {
+	if err := ensureVirtualDeviceFile(virtualDisk); err != nil {
+		return err
+	}
+	return restartUSBDeviceScript()
+}
+
+func unmountVirtualDeviceDisk() error {
+	if err := utils.Run(usbDevScript, "stop"); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(massStorageConfigPath); err != nil {
+		return err
+	}
+	if err := os.Remove(virtualDisk); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return utils.Run(usbDevScript, "start")
+}
+
+func ensureVirtualDeviceFile(path string) error {
+	return os.WriteFile(path, nil, 0o644)
+}
+
+func restartUSBDeviceScript() error {
+	if err := utils.Run(usbDevScript, "stop"); err != nil {
+		return err
+	}
+	return utils.Run(usbDevScript, "start")
 }

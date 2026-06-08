@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
@@ -36,7 +37,7 @@ func (s *Service) EnableMdns(c *gin.Context) {
 		return
 	}
 
-	err := utils.Run("cp", "-f", AvahiDaemonBackupScript, AvahiDaemonScript)
+	err := utils.CopyFile(AvahiDaemonBackupScript, AvahiDaemonScript)
 	if err == nil {
 		err = utils.Run(AvahiDaemonScript, "start")
 	}
@@ -65,7 +66,14 @@ func (s *Service) DisableMdns(c *gin.Context) {
 		rsp.ErrRsp(c, -1, "failed to disable mdns")
 		return
 	}
-	err = utils.Run("kill", "-9", validPID)
+	pidValue, err := strconv.Atoi(validPID)
+	if err != nil {
+		log.Errorf("invalid mdns pid %q: %s", validPID, err)
+		rsp.ErrRsp(c, -1, "failed to disable mdns")
+		return
+	}
+
+	err = syscall.Kill(pidValue, syscall.SIGKILL)
 	if err != nil {
 		log.Errorf("failed to stop avahi-daemon: %s", err)
 		rsp.ErrRsp(c, -1, "failed to disable mdns")

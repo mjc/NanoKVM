@@ -107,14 +107,10 @@ func (c *Cli) Logout() error {
 }
 
 func runInitScriptAction(action string) error {
-	return utils.RunSequence(initScriptCommands(action))
-}
-
-func initScriptCommands(action string) []utils.CommandSpec {
-	return []utils.CommandSpec{
-		{Name: "cp", Args: []string{"-f", ScriptBackupPath, ScriptPath}},
-		{Name: ScriptPath, Args: []string{action}},
+	if err := utils.CopyFile(ScriptBackupPath, ScriptPath); err != nil {
+		return err
 	}
+	return utils.Run(ScriptPath, action)
 }
 
 func runTailscale(args ...string) error {
