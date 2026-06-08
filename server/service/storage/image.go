@@ -128,6 +128,7 @@ func (s *Service) MountImage(c *gin.Context) {
 	}()
 
 	if err := resetUSBGadgetUDC(); err != nil {
+		log.Errorf("reset usb gadget failed: %v", err)
 		rsp.ErrRsp(c, -2, "reset usb gadget failed")
 		return
 	}
@@ -213,7 +214,11 @@ func resetUSBGadgetUDC() error {
 }
 
 func resetUSBGadgetUDCPaths(udcPath string, classDir string) error {
-	if err := os.WriteFile(udcPath, []byte("\n"), 0o644); err != nil {
+	return resetUSBGadgetUDCPathsWithWriter(udcPath, classDir, os.WriteFile)
+}
+
+func resetUSBGadgetUDCPathsWithWriter(udcPath string, classDir string, writeFile func(string, []byte, os.FileMode) error) error {
+	if err := writeFile(udcPath, []byte("\n"), 0o644); err != nil {
 		return err
 	}
 	time.Sleep(100 * time.Millisecond)
@@ -227,7 +232,7 @@ func resetUSBGadgetUDCPaths(udcPath string, classDir string) error {
 	}
 
 	controller := entries[0].Name()
-	if err := os.WriteFile(udcPath, []byte(controller), 0o644); err != nil {
+	if err := writeFile(udcPath, []byte(controller), 0o644); err != nil {
 		return err
 	}
 	time.Sleep(100 * time.Millisecond)

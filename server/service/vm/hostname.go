@@ -62,10 +62,14 @@ func (s *Service) SetHostname(c *gin.Context) {
 		return
 	}
 
+	if err := syscall.Sethostname(data); err != nil {
+		log.Errorf("failed to apply hostname: %s", err)
+		rsp.ErrRsp(c, -4, "failed to apply hostname")
+		return
+	}
+
 	rsp.OkRsp(c)
 	log.Debugf("set Hostname: %s", req.Hostname)
-
-	_ = syscall.Sethostname(data)
 }
 
 func (s *Service) GetHostname(c *gin.Context) {

@@ -105,19 +105,33 @@ func setVirtualDevice(device string, configPath string, mount bool) error {
 		if err := os.WriteFile(device, nil, 0o644); err != nil {
 			return err
 		}
-		return restartUSBDeviceScript()
+		if err := restartUSBDeviceScript(); err != nil {
+			_ = os.Remove(device)
+			return err
+		}
+		return nil
 	}
 
 	if err := utils.Run(usbDevScript, "stop"); err != nil {
 		return err
 	}
+	restartNeeded := true
+	defer func() {
+		if restartNeeded {
+			_ = utils.Run(usbDevScript, "start")
+		}
+	}()
 	if err := os.RemoveAll(configPath); err != nil {
 		return err
 	}
 	if err := os.Remove(device); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return utils.Run(usbDevScript, "start")
+	if err := utils.Run(usbDevScript, "start"); err != nil {
+		return err
+	}
+	restartNeeded = false
+	return nil
 }
 
 func restartUSBDeviceScript() error {

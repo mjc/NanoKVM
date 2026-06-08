@@ -24,8 +24,23 @@ func TestResetUSBGadgetUDCPathsRebindsFirstController(t *testing.T) {
 		t.Fatalf("create controller entry: %v", err)
 	}
 
-	if err := resetUSBGadgetUDCPaths(udcPath, classDir); err != nil {
+	var writes [][]byte
+	writeFile := func(path string, data []byte, perm os.FileMode) error {
+		writes = append(writes, append([]byte(nil), data...))
+		return os.WriteFile(path, data, perm)
+	}
+
+	if err := resetUSBGadgetUDCPathsWithWriter(udcPath, classDir, writeFile); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(writes) != 2 {
+		t.Fatalf("expected 2 writes, got %d", len(writes))
+	}
+	if string(writes[0]) != "\n" {
+		t.Fatalf("expected first write to clear with newline, got %q", string(writes[0]))
+	}
+	if string(writes[1]) != "musb-hdrc.0" {
+		t.Fatalf("expected second write to rebind controller, got %q", string(writes[1]))
 	}
 
 	data, err := os.ReadFile(udcPath)
@@ -52,7 +67,16 @@ func TestResetUSBGadgetUDCPathsFailsWithoutController(t *testing.T) {
 		t.Fatalf("mkdir class dir: %v", err)
 	}
 
-	if err := resetUSBGadgetUDCPaths(udcPath, classDir); err == nil {
+	var writes [][]byte
+	writeFile := func(path string, data []byte, perm os.FileMode) error {
+		writes = append(writes, append([]byte(nil), data...))
+		return os.WriteFile(path, data, perm)
+	}
+
+	if err := resetUSBGadgetUDCPathsWithWriter(udcPath, classDir, writeFile); err == nil {
 		t.Fatalf("expected error when no UDC controllers are present")
+	}
+	if len(writes) == 0 || string(writes[0]) != "\n" {
+		t.Fatalf("expected first write to clear with newline, got %#v", writes)
 	}
 }

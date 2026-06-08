@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -14,6 +15,8 @@ const (
 	ScriptPath       = "/etc/init.d/S98tailscaled"
 	ScriptBackupPath = "/kvmapp/system/init.d/S98tailscaled"
 )
+
+var loginURLPattern = regexp.MustCompile(`https://[^\s]+`)
 
 type Cli struct{}
 
@@ -129,10 +132,15 @@ func parseStatusOutput(output []byte) (*TsStatus, error) {
 }
 
 func extractLoginURL(line string) string {
-	if !strings.Contains(line, "https") {
+	candidate := loginURLPattern.FindString(line)
+	if candidate == "" {
 		return ""
 	}
 
-	reg := regexp.MustCompile(`\s+`)
-	return reg.ReplaceAllString(line, "")
+	parsed, err := url.ParseRequestURI(candidate)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return ""
+	}
+
+	return candidate
 }

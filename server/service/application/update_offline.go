@@ -36,7 +36,9 @@ func (s *Service) OfflineUpdate(c *gin.Context) {
 	log.Debugf("offline update application success")
 
 	time.Sleep(1 * time.Second)
-	_ = utils.Run("/etc/init.d/S95nanokvm", "restart")
+	if err := utils.Run("/etc/init.d/S95nanokvm", "restart"); err != nil {
+		log.Errorf("failed to restart NanoKVM after offline update: %v", err)
+	}
 }
 
 func offlineUpdate(c *gin.Context) error {

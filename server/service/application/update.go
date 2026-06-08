@@ -40,7 +40,9 @@ func (s *Service) Update(c *gin.Context) {
 	// Sleep for a second before restarting the device
 	time.Sleep(1 * time.Second)
 
-	_ = utils.Run("/etc/init.d/S95nanokvm", "restart")
+	if err := utils.Run("/etc/init.d/S95nanokvm", "restart"); err != nil {
+		log.Errorf("failed to restart NanoKVM after update: %v", err)
+	}
 }
 
 func update() error {

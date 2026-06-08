@@ -51,11 +51,11 @@ func RunSequence(commands []CommandSpec) error {
 }
 
 func RunSequenceWithDelay(commands []CommandSpec, delay time.Duration) error {
-	for _, command := range commands {
+	for i, command := range commands {
 		if err := Run(command.Name, command.Args...); err != nil {
 			return fmt.Errorf("%s %s: %w", command.Name, strings.Join(command.Args, " "), err)
 		}
-		if delay > 0 {
+		if delay > 0 && i < len(commands)-1 {
 			time.Sleep(delay)
 		}
 	}
