@@ -119,8 +119,8 @@ type GetMouseJigglerRsp struct {
 }
 
 type SetMouseJigglerReq struct {
-	Enabled bool   `validate:"omitempty"`
-	Mode    string `validate:"omitempty"`
+	Enabled bool   `json:"enabled" validate:"omitempty"`
+	Mode    string `json:"mode" validate:"omitempty,oneof=relative absolute"`
 }
 
 type GetMdnsStateRsp struct {
@@ -128,7 +128,7 @@ type GetMdnsStateRsp struct {
 }
 
 type SetHostnameReq struct {
-	Hostname string `validate:"required"`
+	Hostname string `json:"hostname" validate:"required,hostname,max=253"`
 }
 
 type GetHostnameRsp struct {
@@ -136,7 +136,7 @@ type GetHostnameRsp struct {
 }
 
 type SetWebTitleReq struct {
-	Title string `validate:"omitempty"`
+	Title string `json:"title" validate:"omitempty,max=64"`
 }
 
 type GetWebTitleRsp struct {

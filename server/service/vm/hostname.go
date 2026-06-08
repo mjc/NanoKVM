@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"NanoKVM-Server/proto"
@@ -26,6 +27,10 @@ func (s *Service) SetHostname(c *gin.Context) {
 		rsp.ErrRsp(c, -1, "invalid arguments")
 		return
 	}
+	if !validHostname(req.Hostname) {
+		rsp.ErrRsp(c, -1, "invalid arguments")
+		return
+	}
 
 	dataRead, err := os.ReadFile(EtcHostname)
 	if err != nil {
@@ -35,7 +40,7 @@ func (s *Service) SetHostname(c *gin.Context) {
 
 	oldHostname := strings.Replace(string(dataRead), "\n", "", -1)
 
-	if (oldHostname != req.Hostname) {
+	if oldHostname != req.Hostname {
 		dataRead, err = os.ReadFile(EtcHosts)
 		if err != nil {
 			rsp.ErrRsp(c, -1, "read Hosts failed")
@@ -66,6 +71,20 @@ func (s *Service) SetHostname(c *gin.Context) {
 	log.Debugf("set Hostname: %s", req.Hostname)
 
 	_ = exec.Command("hostname", "-F", EtcHostname).Run()
+}
+
+var hostnamePattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+
+func validHostname(hostname string) bool {
+	if len(hostname) == 0 || len(hostname) > 253 || strings.Contains(hostname, "..") {
+		return false
+	}
+	for _, label := range strings.Split(hostname, ".") {
+		if !hostnamePattern.MatchString(label) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) GetHostname(c *gin.Context) {
