@@ -93,15 +93,15 @@ func enableSwap(size int64) error {
 
 func buildSwapCommands(size int64) []commandSpec {
 	return []commandSpec{
-		{name: "fallocate", args: []string{"-l", fmt.Sprintf("%dM", size), SwapFile}},
-		{name: "chmod", args: []string{"600", SwapFile}},
-		{name: "mkswap", args: []string{SwapFile}},
-		{name: "swapon", args: []string{SwapFile}},
+		{Name: "fallocate", Args: []string{"-l", fmt.Sprintf("%dM", size), SwapFile}},
+		{Name: "chmod", Args: []string{"600", SwapFile}},
+		{Name: "mkswap", Args: []string{SwapFile}},
+		{Name: "swapon", Args: []string{SwapFile}},
 	}
 }
 
 func disableSwap() error {
-	if err := runCommandSpecs([]commandSpec{{name: "swapoff", args: []string{"-a"}}}, 0); err != nil {
+	if err := runCommandSpecs([]commandSpec{{Name: "swapoff", Args: []string{"-a"}}}, 0); err != nil {
 		log.Errorf("failed to execute swapoff: %s", err)
 		return err
 	}

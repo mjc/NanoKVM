@@ -2,8 +2,8 @@ package vm
 
 import (
 	"NanoKVM-Server/proto"
+	"NanoKVM-Server/utils"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -36,9 +36,9 @@ func (s *Service) EnableMdns(c *gin.Context) {
 		return
 	}
 
-	err := exec.Command("cp", "-f", AvahiDaemonBackupScript, AvahiDaemonScript).Run()
+	err := utils.Run("cp", "-f", AvahiDaemonBackupScript, AvahiDaemonScript)
 	if err == nil {
-		err = exec.Command(AvahiDaemonScript, "start").Run()
+		err = utils.Run(AvahiDaemonScript, "start")
 	}
 	if err != nil {
 		log.Errorf("failed to start avahi-daemon: %s", err)
@@ -65,7 +65,7 @@ func (s *Service) DisableMdns(c *gin.Context) {
 		rsp.ErrRsp(c, -1, "failed to disable mdns")
 		return
 	}
-	err = exec.Command("kill", "-9", validPID).Run()
+	err = utils.Run("kill", "-9", validPID)
 	if err != nil {
 		log.Errorf("failed to stop avahi-daemon: %s", err)
 		rsp.ErrRsp(c, -1, "failed to disable mdns")

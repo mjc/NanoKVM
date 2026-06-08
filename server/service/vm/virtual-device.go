@@ -18,29 +18,29 @@ const (
 
 var (
 	mountNetworkCommands = []commandSpec{
-		{name: "touch", args: []string{"/boot/usb.rndis0"}},
-		{name: "/etc/init.d/S03usbdev", args: []string{"stop"}},
-		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
+		{Name: "touch", Args: []string{"/boot/usb.rndis0"}},
+		{Name: "/etc/init.d/S03usbdev", Args: []string{"stop"}},
+		{Name: "/etc/init.d/S03usbdev", Args: []string{"start"}},
 	}
 
 	unmountNetworkCommands = []commandSpec{
-		{name: "/etc/init.d/S03usbdev", args: []string{"stop"}},
-		{name: "rm", args: []string{"-rf", "/sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0"}},
-		{name: "rm", args: []string{"/boot/usb.rndis0"}},
-		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
+		{Name: "/etc/init.d/S03usbdev", Args: []string{"stop"}},
+		{Name: "rm", Args: []string{"-rf", "/sys/kernel/config/usb_gadget/g0/configs/c.1/rndis.usb0"}},
+		{Name: "rm", Args: []string{"/boot/usb.rndis0"}},
+		{Name: "/etc/init.d/S03usbdev", Args: []string{"start"}},
 	}
 
 	mountDiskCommands = []commandSpec{
-		{name: "touch", args: []string{"/boot/usb.disk0"}},
-		{name: "/etc/init.d/S03usbdev", args: []string{"stop"}},
-		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
+		{Name: "touch", Args: []string{"/boot/usb.disk0"}},
+		{Name: "/etc/init.d/S03usbdev", Args: []string{"stop"}},
+		{Name: "/etc/init.d/S03usbdev", Args: []string{"start"}},
 	}
 
 	unmountDiskCommands = []commandSpec{
-		{name: "/etc/init.d/S03usbdev", args: []string{"stop"}},
-		{name: "rm", args: []string{"-rf", "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0"}},
-		{name: "rm", args: []string{"/boot/usb.disk0"}},
-		{name: "/etc/init.d/S03usbdev", args: []string{"start"}},
+		{Name: "/etc/init.d/S03usbdev", Args: []string{"stop"}},
+		{Name: "rm", Args: []string{"-rf", "/sys/kernel/config/usb_gadget/g0/configs/c.1/mass_storage.disk0"}},
+		{Name: "rm", Args: []string{"/boot/usb.disk0"}},
+		{Name: "/etc/init.d/S03usbdev", Args: []string{"start"}},
 	}
 )
 

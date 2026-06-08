@@ -1,10 +1,8 @@
 package utils
 
-import "os/exec"
-
 func RestartNanoKVM() error {
 	name, args := restartNanoKVMCommand()
-	return exec.Command(name, args...).Run()
+	return Run(name, args...)
 }
 
 func restartNanoKVMCommand() (string, []string) {

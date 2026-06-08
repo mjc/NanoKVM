@@ -1,6 +1,7 @@
 package picoclaw
 
 import (
+	"NanoKVM-Server/utils"
 	"context"
 	"fmt"
 	"os"
@@ -227,5 +228,5 @@ func isRuntimeRunning() (bool, error) {
 }
 
 func runPicoclawScript(ctx context.Context, scriptPath string, action string) ([]byte, error) {
-	return exec.CommandContext(ctx, scriptPath, action).CombinedOutput()
+	return utils.RunOutputContext(ctx, scriptPath, action)
 }

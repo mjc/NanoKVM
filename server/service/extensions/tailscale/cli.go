@@ -50,7 +50,7 @@ func (c *Cli) Restart() error {
 }
 
 func (c *Cli) Stop() error {
-	if err := exec.Command(ScriptPath, "stop").Run(); err != nil {
+	if err := utils.Run(ScriptPath, "stop"); err != nil {
 		return err
 	}
 
@@ -125,36 +125,24 @@ func (c *Cli) Logout() error {
 }
 
 func runInitScriptAction(action string) error {
-	for _, command := range initScriptCommands(action) {
-		if err := exec.Command(command.name, command.args...).Run(); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return utils.RunSequence(initScriptCommands(action))
 }
 
-func initScriptCommands(action string) []struct {
-	name string
-	args []string
-} {
-	return []struct {
-		name string
-		args []string
-	}{
-		{name: "cp", args: []string{"-f", ScriptBackupPath, ScriptPath}},
-		{name: ScriptPath, args: []string{action}},
+func initScriptCommands(action string) []utils.CommandSpec {
+	return []utils.CommandSpec{
+		{Name: "cp", Args: []string{"-f", ScriptBackupPath, ScriptPath}},
+		{Name: ScriptPath, Args: []string{action}},
 	}
 }
 
 func runTailscale(args ...string) error {
-	return tailscaleCommand(args...).Run()
+	return utils.Run("tailscale", args...)
 }
 
 func runTailscaleOutput(args ...string) ([]byte, error) {
-	return tailscaleCommand(args...).CombinedOutput()
+	return utils.RunOutput("tailscale", args...)
 }
 
 func tailscaleCommand(args ...string) *exec.Cmd {
-	return exec.Command("tailscale", args...)
+	return utils.Command("tailscale", args...)
 }

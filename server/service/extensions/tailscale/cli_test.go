@@ -11,18 +11,18 @@ func TestInitScriptCommandSpecs(t *testing.T) {
 		t.Fatalf("expected 2 commands, got %d", len(got))
 	}
 
-	if got[0].name != "cp" {
-		t.Fatalf("expected first command to be cp, got %q", got[0].name)
+	if got[0].Name != "cp" {
+		t.Fatalf("expected first command to be cp, got %q", got[0].Name)
 	}
-	if len(got[0].args) != 3 || got[0].args[0] != "-f" || got[0].args[1] != ScriptBackupPath || got[0].args[2] != ScriptPath {
-		t.Fatalf("unexpected copy args: %#v", got[0].args)
+	if len(got[0].Args) != 3 || got[0].Args[0] != "-f" || got[0].Args[1] != ScriptBackupPath || got[0].Args[2] != ScriptPath {
+		t.Fatalf("unexpected copy args: %#v", got[0].Args)
 	}
 
-	if got[1].name != ScriptPath {
-		t.Fatalf("expected second command %q, got %q", ScriptPath, got[1].name)
+	if got[1].Name != ScriptPath {
+		t.Fatalf("expected second command %q, got %q", ScriptPath, got[1].Name)
 	}
-	if len(got[1].args) != 1 || got[1].args[0] != "restart" {
-		t.Fatalf("unexpected action args: %#v", got[1].args)
+	if len(got[1].Args) != 1 || got[1].Args[0] != "restart" {
+		t.Fatalf("unexpected action args: %#v", got[1].Args)
 	}
 }
 
