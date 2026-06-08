@@ -115,8 +115,12 @@ func (s *Service) GetAutostartContent(c *gin.Context) {
 		return
 	}
 
-	_ = content
-	rsp.OkRspWithData(c, "")
+	if len(content) > maxAutostartContent {
+		rsp.ErrRsp(c, -1, "content too large")
+		return
+	}
+
+	rsp.OkRspWithData(c, string(content))
 	log.Debugf("get autostart content success")
 }
 
