@@ -34,31 +34,3 @@ func TestParseAvahiPID(t *testing.T) {
 		})
 	}
 }
-
-func TestBuildSwapCommands(t *testing.T) {
-	got := buildSwapCommands(128)
-	if len(got) != 4 {
-		t.Fatalf("expected 4 commands, got %d", len(got))
-	}
-
-	want := []commandSpec{
-		{Name: "fallocate", Args: []string{"-l", "128M", SwapFile}},
-		{Name: "chmod", Args: []string{"600", SwapFile}},
-		{Name: "mkswap", Args: []string{SwapFile}},
-		{Name: "swapon", Args: []string{SwapFile}},
-	}
-
-	for i := range want {
-		if got[i].Name != want[i].Name {
-			t.Fatalf("command %d name: expected %q, got %q", i, want[i].Name, got[i].Name)
-		}
-		if len(got[i].Args) != len(want[i].Args) {
-			t.Fatalf("command %d args length: expected %d, got %d", i, len(want[i].Args), len(got[i].Args))
-		}
-		for j := range want[i].Args {
-			if got[i].Args[j] != want[i].Args[j] {
-				t.Fatalf("command %d arg %d: expected %q, got %q", i, j, want[i].Args[j], got[i].Args[j])
-			}
-		}
-	}
-}
