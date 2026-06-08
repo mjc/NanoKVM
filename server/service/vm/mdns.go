@@ -37,8 +37,7 @@ func (s *Service) EnableMdns(c *gin.Context) {
 		return
 	}
 
-	err := utils.RestoreAndRunInitScriptAction(AvahiDaemonScript, AvahiDaemonBackupScript, "start")
-	if err != nil {
+	if err := utils.RestoreAndRunInitScriptAction(AvahiDaemonScript, AvahiDaemonBackupScript, "start"); err != nil {
 		log.Errorf("failed to start avahi-daemon: %s", err)
 		rsp.ErrRsp(c, -1, "failed to enable mdns")
 		return

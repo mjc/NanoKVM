@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -36,14 +38,6 @@ func RunOutput(name string, args ...string) ([]byte, error) {
 	return output, err
 }
 
-func RunContext(ctx context.Context, name string, args ...string) error {
-	err := exec.CommandContext(ctx, name, args...).Run()
-	if shouldRetryWithShell(name, err) {
-		return exec.CommandContext(ctx, "sh", append([]string{name}, args...)...).Run()
-	}
-	return err
-}
-
 func RunOutputContext(ctx context.Context, name string, args ...string) ([]byte, error) {
 	output, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 	if shouldRetryWithShell(name, err) {
@@ -72,4 +66,43 @@ func shouldRetryWithShell(name string, err error) bool {
 	return err != nil &&
 		errors.Is(err, syscall.ENOEXEC) &&
 		(strings.ContainsRune(name, os.PathSeparator) || strings.HasSuffix(strings.ToLower(name), ".sh"))
+}
+
+func RestoreAndRunInitScriptAction(scriptPath string, backupPath string, action string) error {
+	srcFile, err := os.Open(backupPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = srcFile.Close() }()
+
+	info, err := srcFile.Stat()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0o755); err != nil {
+		return err
+	}
+
+	tmpFile, err := os.CreateTemp(filepath.Dir(scriptPath), filepath.Base(scriptPath)+".tmp-")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	if _, err := io.Copy(tmpFile, srcFile); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Chmod(info.Mode()); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, scriptPath); err != nil {
+		return err
+	}
+	return Run(scriptPath, action)
 }

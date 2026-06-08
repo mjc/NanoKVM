@@ -85,7 +85,7 @@ func (s *Service) SetHidMode(c *gin.Context) {
 
 	log.Println("reboot system...")
 	time.Sleep(500 * time.Millisecond)
-	_ = utils.Reboot()
+	_ = utils.Run("reboot")
 }
 
 func (s *Service) ResetHid(c *gin.Context) {
@@ -120,7 +120,7 @@ func ResetUSBPHY() error {
 	h.CloseNoLock()
 	defer h.Unlock()
 
-	if err := utils.RunInitScriptAction(USBDevScript, "restart_phy"); err != nil {
+	if err := utils.Run(USBDevScript, "restart_phy"); err != nil {
 		return fmt.Errorf("restart usb phy: %w", err)
 	}
 

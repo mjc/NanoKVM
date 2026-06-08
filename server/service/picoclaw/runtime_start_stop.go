@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -216,39 +216,16 @@ func isRuntimeRunning() (bool, error) {
 		return false, fmt.Errorf("invalid picoclaw binary path: %s", picoclawBinaryPath)
 	}
 
-	return isProcessRunning("/proc", binName)
-}
-
-func isProcessRunning(procRoot string, binName string) (bool, error) {
-	entries, err := os.ReadDir(procRoot)
-	if err != nil {
+	command := exec.Command("pidof", binName)
+	if err := command.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
 		return false, err
 	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		if _, err := strconv.Atoi(entry.Name()); err != nil {
-			continue
-		}
-
-		commPath := filepath.Join(procRoot, entry.Name(), "comm")
-		data, err := os.ReadFile(commPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return false, err
-		}
-		if strings.TrimSpace(string(data)) == binName {
-			return true, nil
-		}
-	}
-
-	return false, nil
+	return true, nil
 }
 
 func runPicoclawScript(ctx context.Context, scriptPath string, action string) ([]byte, error) {
-	return utils.RunInitScriptActionOutputContext(ctx, scriptPath, action)
+	return utils.RunOutputContext(ctx, scriptPath, action)
 }

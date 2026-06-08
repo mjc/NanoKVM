@@ -146,7 +146,7 @@ func (s *Service) ConnectWifi(c *gin.Context) {
 func (s *Service) DisconnectWifi(c *gin.Context) {
 	var rsp proto.Response
 
-	output, err := utils.RunInitScriptActionOutput(WiFiScript, "stop")
+	output, err := utils.RunOutput(WiFiScript, "stop")
 	if err != nil {
 		log.Errorf("failed to disconnect wifi: %s", output)
 		rsp.ErrRsp(c, -1, "failed to stop wifi")

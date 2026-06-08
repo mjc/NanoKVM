@@ -43,27 +43,22 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 	}
 
 	var device string
-	var action func() error
+	var configPath string
+	var mount bool
 
 	switch req.Device {
 	case "network":
 		device = virtualNetwork
+		configPath = networkConfigPath
 
 		exist, _ := isDeviceExist(device)
-		if !exist {
-			action = mountVirtualDeviceNetwork
-		} else {
-			action = unmountVirtualDeviceNetwork
-		}
+		mount = !exist
 	case "disk":
 		device = virtualDisk
+		configPath = massStorageConfigPath
 
 		exist, _ := isDeviceExist(device)
-		if !exist {
-			action = mountVirtualDeviceDisk
-		} else {
-			action = unmountVirtualDeviceDisk
-		}
+		mount = !exist
 	default:
 		rsp.ErrRsp(c, -2, "invalid arguments")
 		return
@@ -77,7 +72,7 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 		h.Unlock()
 	}()
 
-	if err := action(); err != nil {
+	if err := setVirtualDevice(device, configPath, mount); err != nil {
 		rsp.ErrRsp(c, -3, "operation failed")
 		return
 	}
@@ -105,48 +100,24 @@ func isDeviceExist(device string) (bool, error) {
 	return false, err
 }
 
-func mountVirtualDeviceNetwork() error {
-	if err := ensureVirtualDeviceFile(virtualNetwork); err != nil {
-		return err
+func setVirtualDevice(device string, configPath string, mount bool) error {
+	if mount {
+		if err := os.WriteFile(device, nil, 0o644); err != nil {
+			return err
+		}
+		return restartUSBDeviceScript()
 	}
-	return restartUSBDeviceScript()
-}
 
-func unmountVirtualDeviceNetwork() error {
 	if err := utils.Run(usbDevScript, "stop"); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(networkConfigPath); err != nil {
+	if err := os.RemoveAll(configPath); err != nil {
 		return err
 	}
-	if err := os.Remove(virtualNetwork); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return utils.Run(usbDevScript, "start")
-}
-
-func mountVirtualDeviceDisk() error {
-	if err := ensureVirtualDeviceFile(virtualDisk); err != nil {
-		return err
-	}
-	return restartUSBDeviceScript()
-}
-
-func unmountVirtualDeviceDisk() error {
-	if err := utils.Run(usbDevScript, "stop"); err != nil {
-		return err
-	}
-	if err := os.RemoveAll(massStorageConfigPath); err != nil {
-		return err
-	}
-	if err := os.Remove(virtualDisk); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(device); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return utils.Run(usbDevScript, "start")
-}
-
-func ensureVirtualDeviceFile(path string) error {
-	return os.WriteFile(path, nil, 0o644)
 }
 
 func restartUSBDeviceScript() error {

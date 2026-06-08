@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 )
@@ -58,15 +57,15 @@ func (c *Cli) Stop() error {
 }
 
 func (c *Cli) Up() error {
-	return runTailscale("up", "--accept-dns=false")
+	return utils.Run("tailscale", "up", "--accept-dns=false")
 }
 
 func (c *Cli) Down() error {
-	return runTailscale("down")
+	return utils.Run("tailscale", "down")
 }
 
 func (c *Cli) Status() (*TsStatus, error) {
-	output, err := runTailscaleOutput("status", "--json")
+	output, err := utils.RunOutput("tailscale", "status", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +74,7 @@ func (c *Cli) Status() (*TsStatus, error) {
 }
 
 func (c *Cli) Login() (string, error) {
-	cmd := tailscaleCommand("login", "--accept-dns=false", "--timeout=10m")
+	cmd := utils.Command("tailscale", "login", "--accept-dns=false", "--timeout=10m")
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -103,23 +102,11 @@ func (c *Cli) Login() (string, error) {
 }
 
 func (c *Cli) Logout() error {
-	return runTailscale("logout")
+	return utils.Run("tailscale", "logout")
 }
 
 func runInitScriptAction(action string) error {
 	return utils.RestoreAndRunInitScriptAction(ScriptPath, ScriptBackupPath, action)
-}
-
-func runTailscale(args ...string) error {
-	return utils.Run("tailscale", args...)
-}
-
-func runTailscaleOutput(args ...string) ([]byte, error) {
-	return utils.RunOutput("tailscale", args...)
-}
-
-func tailscaleCommand(args ...string) *exec.Cmd {
-	return utils.Command("tailscale", args...)
 }
 
 func parseStatusOutput(output []byte) (*TsStatus, error) {

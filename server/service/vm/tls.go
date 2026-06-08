@@ -35,7 +35,7 @@ func (s *Service) SetTls(c *gin.Context) {
 
 	rsp.OkRsp(c)
 
-	_ = utils.RestartNanoKVM()
+	_ = utils.Run("/etc/init.d/S95nanokvm", "restart")
 }
 
 func enableTls() error {
