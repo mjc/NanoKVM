@@ -209,12 +209,16 @@ func (s *Service) DeleteImage(c *gin.Context) {
 }
 
 func resetUSBGadgetUDC() error {
-	if err := os.WriteFile("/sys/kernel/config/usb_gadget/g0/UDC", []byte("\n"), 0o644); err != nil {
+	return resetUSBGadgetUDCPaths("/sys/kernel/config/usb_gadget/g0/UDC", "/sys/class/udc")
+}
+
+func resetUSBGadgetUDCPaths(udcPath string, classDir string) error {
+	if err := os.WriteFile(udcPath, []byte("\n"), 0o644); err != nil {
 		return err
 	}
 	time.Sleep(100 * time.Millisecond)
 
-	entries, err := os.ReadDir("/sys/class/udc")
+	entries, err := os.ReadDir(classDir)
 	if err != nil {
 		return err
 	}
@@ -223,7 +227,7 @@ func resetUSBGadgetUDC() error {
 	}
 
 	controller := entries[0].Name()
-	if err := os.WriteFile("/sys/kernel/config/usb_gadget/g0/UDC", []byte(controller), 0o644); err != nil {
+	if err := os.WriteFile(udcPath, []byte(controller), 0o644); err != nil {
 		return err
 	}
 	time.Sleep(100 * time.Millisecond)
