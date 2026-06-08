@@ -12,6 +12,8 @@ func TestParseAvahiPID(t *testing.T) {
 		{name: "plain", input: "123", want: "123"},
 		{name: "trimmed", input: " 456\n", want: "456"},
 		{name: "empty", input: "", wantErr: true},
+		{name: "zero", input: "0", wantErr: true},
+		{name: "negative", input: "-1", wantErr: true},
 		{name: "non-numeric", input: "12a", wantErr: true},
 	}
 

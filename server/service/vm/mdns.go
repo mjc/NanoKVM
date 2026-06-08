@@ -103,8 +103,12 @@ func parseAvahiPID(pid string) (string, error) {
 	if clean == "" {
 		return "", strconv.ErrSyntax
 	}
-	if _, err := strconv.Atoi(clean); err != nil {
+	pidValue, err := strconv.Atoi(clean)
+	if err != nil {
 		return "", err
+	}
+	if pidValue <= 0 {
+		return "", strconv.ErrSyntax
 	}
 	return clean, nil
 }
