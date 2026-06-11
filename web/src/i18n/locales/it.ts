@@ -363,8 +363,10 @@ const it = {
         hidOnly: 'HID-Solo modalità',
         hidOnlyDesc:
           'Smette di emulare i dispositivi virtuali, mantenendo solo il controllo di base HID',
+        media: 'Immagine virtuale',
+        mediaDesc: 'Collega un file immagine selezionato all\'host remoto',
         disk: 'Disco virtuale',
-        diskDesc: 'Mount virtual U-disk on the remote host',
+        diskDesc: 'Espone l\'archivio dati NanoKVM all\'host remoto',
         network: 'Rete virtuale',
         networkDesc: 'Monta la scheda di rete virtuale sull’host remoto',
         reboot: 'Riavvia',

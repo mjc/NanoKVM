@@ -362,8 +362,10 @@ const hu = {
         hidOnly: 'HID-Csak mód',
         hidOnlyDesc:
           'A virtuális eszközök emulálásának leállítása, csak az alapvető HID vezérlés megtartásával',
+        media: 'Virtuális lemezkép',
+        mediaDesc: 'Csatlakoztasson egy kiválasztott képfájlt a távoli gazdagéphez',
         disk: 'Virtuális lemez',
-        diskDesc: 'Mount virtual U-disk on the remote host',
+        diskDesc: 'NanoKVM adattároló megosztása a távoli gazdagéppel',
         network: 'Virtuális hálózat',
         networkDesc: 'Virtuális hálózati kártya csatlakoztatása a távoli gazdagépen',
         reboot: 'Újraindítás',

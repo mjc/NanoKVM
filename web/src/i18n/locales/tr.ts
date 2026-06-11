@@ -360,8 +360,10 @@ const tr = {
         hidOnly: 'Yalnızca HID modu',
         hidOnlyDesc:
           'Yalnızca temel HID kontrolünü koruyarak sanal aygıtları taklit etmeyi bırakın',
+        media: 'Sanal imaj',
+        mediaDesc: 'Seçilen imaj dosyasını uzak ana bilgisayara bağla',
         disk: 'Sanal Disk',
-        diskDesc: "Sanal U-disk'i uzak ana bilgisayara bağla",
+        diskDesc: 'NanoKVM veri depolamasını uzak ana bilgisayara sun',
         network: 'Sanal Ağ',
         networkDesc: 'Sanal ağ kartını uzak ana bilgisayara bağla',
         reboot: 'Yeniden Başlat',

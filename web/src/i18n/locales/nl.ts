@@ -363,8 +363,10 @@ const nl = {
         hidOnly: 'HID-Alleen modus',
         hidOnlyDesc:
           'Stop met het emuleren van virtuele apparaten en behoud alleen de basisbesturing van HID',
+        media: 'Virtuele image',
+        mediaDesc: 'Koppel een geselecteerd imagebestand aan de externe host',
         disk: 'Virtuele schijf',
-        diskDesc: 'Koppel virtuele U-schijf aan de externe host',
+        diskDesc: 'Stel NanoKVM-gegevensopslag beschikbaar aan de externe host',
         network: 'Virtueel Netwerk',
         networkDesc: 'Koppel virtueel netwerk kaart aan de externe host',
         reboot: 'Opnieuw opstarten',

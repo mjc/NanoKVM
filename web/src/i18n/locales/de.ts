@@ -364,8 +364,10 @@ const de = {
         hidOnly: 'HID-Only Mode',
         hidOnlyDesc:
           'Hören Sie auf, virtuelle Geräte zu emulieren, und behalten Sie nur die grundlegende HID-Steuerung bei',
+        media: 'Virtuelles Image',
+        mediaDesc: 'Ausgewählte Image-Datei am entfernten Host einbinden',
         disk: 'Virtuelle Festplatte',
-        diskDesc: 'Binde das virtuelle U-Laufwerk an den entfernten Host',
+        diskDesc: 'NanoKVM-Datenspeicher für den entfernten Host bereitstellen',
         network: 'Virtuelles Netzwerk',
         networkDesc: 'Binde die virtuelle Netzwerkkarte an den entfernten Host',
         reboot: 'Neustarten',

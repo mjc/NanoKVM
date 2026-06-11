@@ -363,8 +363,10 @@ const fr = {
         hidOnly: 'HID-Mode uniquement',
         hidOnlyDesc:
           "Arrêtez d'émuler des périphériques virtuels, en ne conservant que le contrôle de base HID",
+        media: 'Image virtuelle',
+        mediaDesc: 'Attacher un fichier image sélectionné à l\'hôte distant',
         disk: 'Disque virtuel',
-        diskDesc: "Monter le disque virtuel U sur l'hôte distant",
+        diskDesc: 'Exposer le stockage de données NanoKVM à l\'hôte distant',
         network: 'Réseau virtuel',
         networkDesc: "Monter la carte réseau virtuelle sur l'hôte distant",
         reboot: 'Redémarrer',
