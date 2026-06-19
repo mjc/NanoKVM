@@ -1,6 +1,32 @@
 #!/bin/sh
 # nanokvm Rev3.1
 
+get_web_backend() {
+  if [ -f /data/go-app-boot ]; then
+    tr -d '[:space:]' < /data/go-app-boot
+    return
+  fi
+
+  printf 'rust'
+}
+
+start_nanokvm_server() {
+  backend="$(get_web_backend)"
+  case "$backend" in
+    legacy|pion)
+      cp -r /kvmapp/kvm_system /tmp/
+      /tmp/kvm_system/kvm_system &
+      /tmp/server/NanoKVM-Server-legacy &
+      ;;
+    rust|*)
+      if [ -x /tmp/server/nanokvm-webrtc-rs ]; then
+        /tmp/server/nanokvm-webrtc-rs &
+      fi
+      /tmp/server/NanoKVM-Server &
+      ;;
+  esac
+}
+
 case "$1" in
   start)
     echo -n kvm > /boot/hostname.prefix
@@ -45,30 +71,28 @@ case "$1" in
     fi
 
     # Start services
-    cp -r /kvmapp/kvm_system /tmp/
-    /tmp/kvm_system/kvm_system &
-
     cp -r /kvmapp/server /tmp/
-    /tmp/server/NanoKVM-Server &
+    start_nanokvm_server
    ;;
 
   stop)
     killall kvm_system
     killall NanoKVM-Server
-    rm -r /tmp/kvm_system /tmp/server
+    killall NanoKVM-Server-legacy
+    killall nanokvm-webrtc-rs
+    rm -rf /tmp/kvm_system /tmp/server
     echo "OK"
    ;;
 
   restart)
     killall kvm_system
     killall NanoKVM-Server
-    rm -r /tmp/kvm_system /tmp/server
-
-    cp -r /kvmapp/kvm_system /tmp/
-    /tmp/kvm_system/kvm_system &
+    killall NanoKVM-Server-legacy
+    killall nanokvm-webrtc-rs
+    rm -rf /tmp/kvm_system /tmp/server
 
     cp -r /kvmapp/server /tmp/
-    /tmp/server/NanoKVM-Server &
+    start_nanokvm_server
 
     sync
     echo "OK"

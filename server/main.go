@@ -37,12 +37,14 @@ func initialize() {
 	// init screen parameters
 	_ = common.GetScreen()
 
-	// init HDMI
-	vision := common.GetKvmVision()
-	vision.SetHDMI(false)
-	time.Sleep(10 * time.Millisecond)
-	if !utils.IsHdmiDisabled() {
-		vision.SetHDMI(true)
+	// init HDMI only for the legacy backend path
+	if shouldInitializeVideoHardware() {
+		vision := common.GetKvmVision()
+		vision.SetHDMI(false)
+		time.Sleep(10 * time.Millisecond)
+		if !utils.IsHdmiDisabled() {
+			vision.SetHDMI(true)
+		}
 	}
 
 	// run mouse jiggler
@@ -122,5 +124,7 @@ func run() {
 }
 
 func dispose() {
-	common.GetKvmVision().Close()
+	if shouldInitializeVideoHardware() {
+		common.GetKvmVision().Close()
+	}
 }

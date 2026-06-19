@@ -1,0 +1,4 @@
+[toolchain]
+channel = "1.96.0"
+components = ["rust-src", "rust-analyzer"]
+targets = ["riscv64gc-unknown-linux-musl"]
