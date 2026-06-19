@@ -12,23 +12,27 @@ pub struct Screen {
 impl Screen {
     pub fn read() -> Self {
         let height = read_u16("/kvmapp/kvm/res").unwrap_or(0);
-        let (width, height) = resolution(height).unwrap_or((0, 0));
         let fps = read_u64("/kvmapp/kvm/fps").map(validate_fps).unwrap_or(30);
         let bitrate = read_u16("/kvmapp/kvm/qlty")
             .filter(|value| *value > 100)
             .filter(|value| matches!(*value, 1000 | 2000 | 3000 | 5000))
             .unwrap_or(3000);
 
+        Self::from_settings(height, fps, bitrate)
+    }
+
+    pub fn frame_duration(self) -> Duration {
+        Duration::from_millis(1000 / self.fps.max(1))
+    }
+
+    pub fn from_settings(height: u16, fps: u64, bitrate: u16) -> Self {
+        let (width, height) = resolution(height).unwrap_or((0, 0));
         Self {
             width,
             height,
             fps,
             bitrate,
         }
-    }
-
-    pub fn frame_duration(self) -> Duration {
-        Duration::from_millis(1000 / self.fps.max(1))
     }
 }
 
@@ -75,5 +79,31 @@ mod tests {
     #[test]
     fn frame_duration_tracks_fps() {
         assert_eq!(Screen { width: 1920, height: 1080, fps: 25, bitrate: 3000 }.frame_duration(), Duration::from_millis(40));
+    }
+
+    #[test]
+    fn from_settings_maps_resolution_and_pacing_inputs() {
+        let screen = Screen::from_settings(720, 25, 2000);
+
+        assert_eq!(
+            screen,
+            Screen {
+                width: 1280,
+                height: 720,
+                fps: 25,
+                bitrate: 2000
+            }
+        );
+        assert_eq!(screen.frame_duration(), Duration::from_millis(40));
+    }
+
+    #[test]
+    fn from_settings_falls_back_to_zero_dimensions_for_unknown_height() {
+        let screen = Screen::from_settings(123, 30, 3000);
+
+        assert_eq!(screen.width, 0);
+        assert_eq!(screen.height, 0);
+        assert_eq!(screen.fps, 30);
+        assert_eq!(screen.bitrate, 3000);
     }
 }

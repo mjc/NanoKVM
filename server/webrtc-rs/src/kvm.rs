@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Context};
+use std::path::{Path, PathBuf};
 use std::slice;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct EncodedFrame {
@@ -37,6 +39,35 @@ where
     };
 
     Ok(Some(EncodedFrame { data, result }))
+}
+
+fn dl_lib_path_from_exe(exe: &Path, library_name: &str) -> anyhow::Result<PathBuf> {
+    Ok(exe
+        .parent()
+        .ok_or_else(|| anyhow!("current executable has no parent directory"))?
+        .join("dl_lib")
+        .join(library_name))
+}
+
+fn initialize_kvm_hardware<FInit, FControl, FSleep>(
+    hdmi_disabled: bool,
+    mut init: FInit,
+    mut hdmi_control: FControl,
+    mut sleep: FSleep,
+)
+where
+    FInit: FnMut(u8),
+    FControl: FnMut(u8),
+    FSleep: FnMut(Duration),
+{
+    init(0);
+    hdmi_control(0);
+    sleep(Duration::from_millis(10));
+
+    if !hdmi_disabled {
+        hdmi_control(1);
+        sleep(Duration::from_secs(2));
+    }
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -167,17 +198,13 @@ mod imp {
             let free_data = unsafe { *lib.get::<FreeKvmvData>(b"free_kvmv_data")? };
             let hdmi_control = unsafe { *lib.get::<KvmvHdmiControl>(b"kvmv_hdmi_control")? };
 
-            unsafe {
-                init(0);
-                hdmi_control(0);
-            }
-            thread::sleep(Duration::from_millis(10));
-            if fs::metadata("/etc/kvm/hdmi_disable").is_err() {
-                unsafe {
-                    hdmi_control(1);
-                }
-                thread::sleep(Duration::from_secs(2));
-            }
+            let hdmi_disabled = fs::metadata("/etc/kvm/hdmi_disable").is_ok();
+            initialize_kvm_hardware(
+                hdmi_disabled,
+                |debug_info_en| unsafe { init(debug_info_en) },
+                |enable| unsafe { hdmi_control(enable) },
+                thread::sleep,
+            );
 
             Ok(Self {
                 _lib: lib,
@@ -240,10 +267,7 @@ mod imp {
 
     fn library_path() -> anyhow::Result<PathBuf> {
         let exe = env::current_exe().context("read current executable path")?;
-        Ok(exe
-            .parent()
-            .ok_or_else(|| anyhow!("current executable has no parent directory"))?
-            .join("dl_lib/libkvm.so"))
+        dl_lib_path_from_exe(&exe, "libkvm.so")
     }
 
     pub use KvmVision as PlatformKvmVision;
@@ -279,6 +303,8 @@ pub use imp::PlatformKvmVision as KvmVision;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -329,5 +355,63 @@ mod tests {
         assert_eq!(frame.result, -3);
         assert!(frame.data.is_empty());
         assert_eq!(free_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn dl_lib_path_from_exe_uses_sibling_dl_lib_directory() {
+        assert_eq!(
+            dl_lib_path_from_exe(Path::new("/data/nanokvm-webrtc-rs"), "libkvm.so").unwrap(),
+            Path::new("/data/dl_lib/libkvm.so")
+        );
+    }
+
+    #[test]
+    fn dl_lib_path_from_exe_maps_companion_library_name() {
+        assert_eq!(
+            dl_lib_path_from_exe(Path::new("/data/nanokvm-webrtc-rs"), "libkvm_mmf.so").unwrap(),
+            Path::new("/data/dl_lib/libkvm_mmf.so")
+        );
+    }
+
+    #[test]
+    fn initialize_kvm_hardware_matches_go_prep_sequence_when_hdmi_is_enabled() {
+        let calls = RefCell::new(Vec::new());
+        initialize_kvm_hardware(
+            false,
+            |debug_info_en| calls.borrow_mut().push(format!("init:{debug_info_en}")),
+            |enable| calls.borrow_mut().push(format!("hdmi:{enable}")),
+            |duration| calls.borrow_mut().push(format!("sleep:{}", duration.as_millis())),
+        );
+
+        assert_eq!(
+            calls.into_inner(),
+            vec![
+                "init:0".to_owned(),
+                "hdmi:0".to_owned(),
+                "sleep:10".to_owned(),
+                "hdmi:1".to_owned(),
+                "sleep:2000".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn initialize_kvm_hardware_skips_hdmi_reenable_when_disabled() {
+        let calls = RefCell::new(Vec::new());
+        initialize_kvm_hardware(
+            true,
+            |debug_info_en| calls.borrow_mut().push(format!("init:{debug_info_en}")),
+            |enable| calls.borrow_mut().push(format!("hdmi:{enable}")),
+            |duration| calls.borrow_mut().push(format!("sleep:{}", duration.as_millis())),
+        );
+
+        assert_eq!(
+            calls.into_inner(),
+            vec![
+                "init:0".to_owned(),
+                "hdmi:0".to_owned(),
+                "sleep:10".to_owned(),
+            ]
+        );
     }
 }
