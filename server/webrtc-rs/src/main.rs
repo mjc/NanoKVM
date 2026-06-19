@@ -29,10 +29,7 @@ struct AppState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug")),
-        )
+        .with_env_filter(tracing_env_filter(std::env::var("RUST_LOG").ok().as_deref()))
         .init();
     from_feature_flags().install_process_default();
 
@@ -40,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
     prep::run();
     prewarm_kvm_vision().await;
     let state = AppState { config };
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 6040);
+    let addr = websocket_bind_addr();
 
     let app = Router::new()
         .route("/", get(index))
@@ -131,6 +128,38 @@ async fn debug_capture() -> impl IntoResponse {
     }
 
     Json(response)
+}
+
+fn websocket_bind_addr() -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 6040)
+}
+
+fn tracing_env_filter(spec: Option<&str>) -> tracing_subscriber::EnvFilter {
+    spec.and_then(|spec| tracing_subscriber::EnvFilter::try_new(spec).ok())
+        .unwrap_or_else(|| tracing_subscriber::EnvFilter::new("debug"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn websocket_bind_addr_uses_unspecified_ipv4_on_port_6040() {
+        assert_eq!(
+            websocket_bind_addr(),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 6040)
+        );
+    }
+
+    #[test]
+    fn tracing_env_filter_defaults_to_debug_when_missing() {
+        assert_eq!(tracing_env_filter(None).to_string(), "debug");
+    }
+
+    #[test]
+    fn tracing_env_filter_uses_requested_log_level() {
+        assert_eq!(tracing_env_filter(Some("info")).to_string(), "info");
+    }
 }
 
 async fn index() -> Html<&'static str> {
