@@ -695,6 +695,17 @@ mod tests {
     }
 
     #[test]
+    fn parses_browser_candidate_ipv6_host() {
+        let candidate = parse_browser_candidate(
+            "candidate:4 1 udp 2122260223 2001:db8::10 5004 typ host generation 0",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(format!("{candidate:?}").contains("2001:db8::10"));
+    }
+
+    #[test]
     fn ignores_browser_end_of_candidates() {
         assert!(
             parse_browser_candidate(r#"{"candidate":"","sdpMid":"0","sdpMLineIndex":0}"#)
