@@ -101,4 +101,24 @@ mod tests {
         };
         assert!(config.client_ice_servers().is_empty());
     }
+
+    #[test]
+    fn empty_turn_fields_do_not_emit_partial_turn_server() {
+        let config = NanoKvmConfig {
+            stun: String::new(),
+            turn: TurnConfig {
+                turn_addr: "turn.example:3478".to_owned(),
+                turn_user: String::new(),
+                turn_cred: "pass".to_owned(),
+            },
+        };
+
+        assert!(config.client_ice_servers().is_empty());
+    }
+
+    #[test]
+    fn load_uses_default_stun_when_config_is_missing() {
+        let config = NanoKvmConfig::load().unwrap();
+        assert_eq!(config.stun, "stun.l.google.com:19302");
+    }
 }

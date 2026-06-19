@@ -29,4 +29,18 @@ mod tests {
         );
         assert_eq!(serde_json::from_str::<Message>(&json).unwrap(), msg);
     }
+
+    #[test]
+    fn message_keeps_empty_payloads_as_empty_strings() {
+        let msg = Message::new("heartbeat", "");
+        let json = serde_json::to_string(&msg).unwrap();
+        assert_eq!(json, r#"{"event":"heartbeat","data":""}"#);
+    }
+
+    #[test]
+    fn message_round_trips_unicode_and_escaped_json() {
+        let msg = Message::new("video-answer", r#"{"type":"answer","sdp":"a=b\nc"}"#);
+        let decoded: Message = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();
+        assert_eq!(decoded, msg);
+    }
 }

@@ -713,10 +713,38 @@ mod tests {
     }
 
     #[test]
+    fn browser_candidate_line_accepts_trimmed_raw_candidate() {
+        assert_eq!(
+            browser_candidate_line("  candidate:9 1 udp 2122260223 192.0.2.99 5009 typ host generation 0  ")
+                .unwrap(),
+            Some("candidate:9 1 udp 2122260223 192.0.2.99 5009 typ host generation 0".to_owned())
+        );
+    }
+
+    #[test]
+    fn browser_candidate_line_ignores_empty_and_whitespace() {
+        assert!(browser_candidate_line("").unwrap().is_none());
+        assert!(browser_candidate_line("   ").unwrap().is_none());
+    }
+
+    #[test]
+    fn browser_candidate_line_rejects_bad_json() {
+        assert!(browser_candidate_line(r#"{"candidate":}"#).is_err());
+    }
+
+    #[test]
     fn describes_annex_b_nal_types() {
         assert_eq!(
             annex_b_nal_types(&[0, 0, 0, 1, 0x67, 1, 2, 0, 0, 1, 0x68, 3]),
             vec![7, 8]
+        );
+    }
+
+    #[test]
+    fn annex_b_nal_types_ignores_leading_noise_and_non_annex_b_bytes() {
+        assert_eq!(
+            annex_b_nal_types(&[9, 9, 0, 0, 1, 0x65, 0xaa, 0xbb, 0, 0, 0, 1, 0x41]),
+            vec![5, 1]
         );
     }
 }

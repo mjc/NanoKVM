@@ -66,4 +66,14 @@ mod tests {
         assert_eq!(validate_fps(5), 10);
         assert_eq!(validate_fps(120), 60);
     }
+
+    #[test]
+    fn frame_duration_never_divides_by_zero() {
+        assert_eq!(Screen { width: 0, height: 0, fps: 0, bitrate: 0 }.frame_duration(), Duration::from_millis(1000));
+    }
+
+    #[test]
+    fn frame_duration_tracks_fps() {
+        assert_eq!(Screen { width: 1920, height: 1080, fps: 25, bitrate: 3000 }.frame_duration(), Duration::from_millis(40));
+    }
 }

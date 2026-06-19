@@ -62,4 +62,23 @@ mod tests {
         .unwrap();
         assert_eq!(buf, [0x01, 0x23, 0x45]);
     }
+
+    #[test]
+    fn masks_values_to_twelve_bits_before_packing() {
+        let mut buf = [0; 3];
+        PlayoutDelay {
+            min_delay: 0x1fff,
+            max_delay: 0x2abc,
+        }
+        .marshal_to(&mut buf)
+        .unwrap();
+        assert_eq!(buf, [0xff, 0xfa, 0xbc]);
+    }
+
+    #[test]
+    fn short_buffer_returns_error() {
+        let mut buf = [0; 2];
+        let err = PlayoutDelay::default().marshal_to(&mut buf).unwrap_err();
+        assert!(matches!(err, util::Error::ErrBufferShort));
+    }
 }
