@@ -1,7 +1,42 @@
+use anyhow::{anyhow, Context};
+use std::slice;
+
 #[derive(Debug)]
 pub struct EncodedFrame {
     pub data: Vec<u8>,
     pub result: i32,
+}
+
+fn finalize_h264_frame<F>(
+    result: i32,
+    data_ptr: *mut u8,
+    data_size: u32,
+    mut free_data: F,
+) -> anyhow::Result<Option<EncodedFrame>>
+where
+    F: FnMut(*mut *mut u8) -> i32,
+{
+    if result < 0 {
+        return Ok(Some(EncodedFrame {
+            data: Vec::new(),
+            result,
+        }));
+    }
+
+    let data = if data_ptr.is_null() || data_size == 0 {
+        Vec::new()
+    } else {
+        let data = unsafe { slice::from_raw_parts(data_ptr, data_size as usize).to_vec() };
+        let mut data_ptr = data_ptr;
+        let free_result = free_data(&mut data_ptr);
+        if free_result < 0 {
+            return Err(anyhow!("free_kvmv_data returned {free_result}"))
+                .context("release KVM H.264 frame");
+        }
+        data
+    };
+
+    Ok(Some(EncodedFrame { data, result }))
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -10,7 +45,6 @@ mod imp {
     use std::fs;
     use std::path::PathBuf;
     use std::ptr;
-    use std::slice;
     use std::sync::mpsc;
     use std::sync::Mutex;
     use std::sync::OnceLock;
@@ -20,7 +54,7 @@ mod imp {
     use anyhow::{anyhow, Context};
     use libloading::Library;
 
-    use super::EncodedFrame;
+    use super::{finalize_h264_frame, EncodedFrame};
 
     const IMG_H264_TYPE: u8 = 1;
 
@@ -172,25 +206,12 @@ mod imp {
             };
 
             if result < 0 {
-                return Ok(Some(EncodedFrame {
-                    data: Vec::new(),
-                    result,
-                }));
+                return finalize_h264_frame(result, data_ptr, data_size, |_| 0);
             }
 
-            let data = if data_ptr.is_null() || data_size == 0 {
-                Vec::new()
-            } else {
-                let data = unsafe { slice::from_raw_parts(data_ptr, data_size as usize).to_vec() };
-                let free_result = unsafe { (self.free_data)(&mut data_ptr) };
-                if free_result < 0 {
-                    return Err(anyhow!("free_kvmv_data returned {free_result}"))
-                        .context("release KVM H.264 frame");
-                }
-                data
-            };
-
-            Ok(Some(EncodedFrame { data, result }))
+            finalize_h264_frame(result, data_ptr, data_size, |ptr| unsafe {
+                (self.free_data)(ptr)
+            })
         }
     }
 
@@ -254,3 +275,59 @@ mod imp {
 }
 
 pub use imp::PlatformKvmVision as KvmVision;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn positive_h264_frame_is_copied_and_freed_once() {
+        let mut data = vec![0x67, 0x11, 0x22, 0x33];
+        let data_ptr = data.as_mut_ptr();
+        let data_len = data.len() as u32;
+        std::mem::forget(data);
+
+        let free_calls = AtomicUsize::new(0);
+        let frame = finalize_h264_frame(3, data_ptr, data_len, |_| {
+            free_calls.fetch_add(1, Ordering::SeqCst);
+            0
+        })
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(frame.result, 3);
+        assert_eq!(frame.data, vec![0x67, 0x11, 0x22, 0x33]);
+        assert_eq!(free_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn zero_length_h264_frame_skips_free_and_returns_empty_payload() {
+        let free_calls = AtomicUsize::new(0);
+        let frame = finalize_h264_frame(4, std::ptr::null_mut(), 0, |_| {
+            free_calls.fetch_add(1, Ordering::SeqCst);
+            0
+        })
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(frame.result, 4);
+        assert!(frame.data.is_empty());
+        assert_eq!(free_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn negative_h264_frame_skips_free_and_returns_empty_payload() {
+        let free_calls = AtomicUsize::new(0);
+        let frame = finalize_h264_frame(-3, 0xdead_beef as *mut u8, 4, |_| {
+            free_calls.fetch_add(1, Ordering::SeqCst);
+            0
+        })
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(frame.result, -3);
+        assert!(frame.data.is_empty());
+        assert_eq!(free_calls.load(Ordering::SeqCst), 0);
+    }
+}
