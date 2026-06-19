@@ -166,10 +166,7 @@ pub async fn serve(socket: WebSocket, config: Arc<NanoKvmConfig>) -> anyhow::Res
     let mut state = CaptureState::default();
     let mut next_rtc_timeout = drain_rtc(&mut rtc, &udp_socket, &mut state).await?;
 
-    signaling_tx.send(Message::new(
-        "ice-servers",
-        serde_json::to_string(&config.client_ice_servers())?,
-    ))?;
+    signaling_tx.send(ice_servers_message(&config)?)?;
 
     loop {
         sync_capture_state(&mut rtc, &mut state)?;
@@ -652,6 +649,13 @@ fn build_rtc() -> Rtc {
     config.build(Instant::now())
 }
 
+fn ice_servers_message(config: &NanoKvmConfig) -> anyhow::Result<Message> {
+    Ok(Message::new(
+        "ice-servers",
+        serde_json::to_string(&config.client_ice_servers())?,
+    ))
+}
+
 fn select_bind_ip() -> anyhow::Result<IpAddr> {
     let candidates = get_if_addrs()?.into_iter().filter_map(|iface| match iface.addr {
         IfAddr::V4(v4) => Some(IpAddr::V4(v4.ip)),
@@ -674,7 +678,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TurnConfig;
     use std::sync::Arc;
+    use str0m::change::SdpAnswer;
+    use str0m::media::{Direction, MediaKind};
+    use str0m::Candidate;
     use tokio::net::UdpSocket;
     use tokio::sync::mpsc;
 
@@ -747,6 +755,28 @@ mod tests {
     #[test]
     fn browser_candidate_line_rejects_bad_json() {
         assert!(browser_candidate_line(r#"{"candidate":}"#).is_err());
+    }
+
+    #[test]
+    fn ice_servers_message_matches_frontend_contract() {
+        let config = NanoKvmConfig {
+            stun: "stun.example:19302".to_owned(),
+            turn: TurnConfig {
+                turn_addr: "turn.example:3478".to_owned(),
+                turn_user: "user".to_owned(),
+                turn_cred: "pass".to_owned(),
+            },
+        };
+
+        let msg = ice_servers_message(&config).unwrap();
+        assert_eq!(msg.event, "ice-servers");
+        let servers: serde_json::Value = serde_json::from_str(&msg.data).unwrap();
+        let servers = servers.as_array().expect("ice-servers array");
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers[0]["urls"], serde_json::json!(["stun:stun.example:19302"]));
+        assert_eq!(servers[1]["urls"], serde_json::json!(["turn:turn.example:3478"]));
+        assert_eq!(servers[1]["username"], serde_json::json!("user"));
+        assert_eq!(servers[1]["credential"], serde_json::json!("pass"));
     }
 
     #[test]
@@ -830,6 +860,44 @@ mod tests {
         assert!(state.video_mid.is_none());
         assert!(state.video_pt.is_none());
         assert!(!state.capture_active);
+    }
+
+    #[tokio::test]
+    async fn video_offer_emits_browser_compatible_answer() {
+        let socket = Arc::new(
+            UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .expect("bind test UDP socket"),
+        );
+        let local_addr = socket.local_addr().expect("read local UDP socket address");
+        let mut rtc = build_rtc();
+        rtc.add_local_candidate(Candidate::host(local_addr, "udp").expect("local candidate"));
+
+        let mut change = rtc.sdp_api();
+        change.add_media(MediaKind::Video, Direction::SendRecv, None, None, None);
+        let (offer, _) = change.apply().expect("create offer");
+
+        let offer_json = serde_json::to_string(&offer).expect("serialize offer");
+        let mut state = CaptureState::default();
+        let mut next_rtc_timeout = Instant::now();
+        let (signaling_tx, mut signaling_rx) = mpsc::unbounded_channel();
+
+        handle_browser_message(
+            Message::new("video-offer", offer_json),
+            &socket,
+            &signaling_tx,
+            &mut rtc,
+            &mut state,
+            &mut next_rtc_timeout,
+        )
+        .await
+        .expect("video offer");
+
+        let answer = signaling_rx.recv().await.expect("answer message");
+        assert_eq!(answer.event, "video-answer");
+        let parsed: SdpAnswer = serde_json::from_str(&answer.data).unwrap();
+        assert!(!answer.data.is_empty());
+        assert!(parsed.to_string().contains("m=video"));
     }
 
     #[test]
