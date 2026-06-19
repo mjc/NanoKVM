@@ -307,8 +307,7 @@ async fn capture_frame(
     let screen = crate::screen::Screen::read();
     let frame_duration = screen.frame_duration();
     let wallclock = Instant::now();
-    let media_time = state.media_time;
-    state.media_time += frame_duration.into();
+    let media_time = advance_media_time(state, frame_duration);
     if vision.is_none() {
         info!("initializing KVM vision for H264 capture");
         match KvmVision::new() {
@@ -407,6 +406,12 @@ async fn capture_frame(
     Ok(())
 }
 
+fn advance_media_time(state: &mut CaptureState, frame_duration: std::time::Duration) -> MediaTime {
+    let media_time = state.media_time;
+    state.media_time += frame_duration.into();
+    media_time
+}
+
 async fn drain_rtc(
     rtc: &mut Rtc,
     udp_socket: &Arc<UdpSocket>,
@@ -467,7 +472,15 @@ fn handle_rtc_event(event: Event, state: &mut CaptureState) {
 }
 
 fn sync_capture_state(rtc: &mut Rtc, state: &mut CaptureState) -> anyhow::Result<()> {
-    if rtc.is_connected() {
+    sync_capture_state_for_connection(rtc.is_connected(), rtc, state)
+}
+
+fn sync_capture_state_for_connection(
+    connected: bool,
+    rtc: &mut Rtc,
+    state: &mut CaptureState,
+) -> anyhow::Result<()> {
+    if connected {
         if state.video_mid.is_some() && state.video_pt.is_none() {
             state.video_pt = resolve_video_pt(rtc, state.video_mid.unwrap());
             if let Some(pt) = state.video_pt {
@@ -680,8 +693,11 @@ mod tests {
     use super::*;
     use crate::config::TurnConfig;
     use std::sync::Arc;
+    use std::time::Duration;
     use str0m::change::SdpAnswer;
+    use str0m::format::Codec;
     use str0m::media::{Direction, MediaKind};
+    use str0m::media::{MediaTime, Mid, Pt};
     use str0m::Candidate;
     use tokio::net::UdpSocket;
     use tokio::sync::mpsc;
@@ -873,7 +889,8 @@ mod tests {
         let mut rtc = build_rtc();
         rtc.add_local_candidate(Candidate::host(local_addr, "udp").expect("local candidate"));
 
-        let mut change = rtc.sdp_api();
+        let mut browser_offer_rtc = RtcConfig::new().clear_codecs().enable_h264(true).build(Instant::now());
+        let mut change = browser_offer_rtc.sdp_api();
         change.add_media(MediaKind::Video, Direction::SendRecv, None, None, None);
         let (offer, _) = change.apply().expect("create offer");
 
@@ -898,6 +915,100 @@ mod tests {
         let parsed: SdpAnswer = serde_json::from_str(&answer.data).unwrap();
         assert!(!answer.data.is_empty());
         assert!(parsed.to_string().contains("m=video"));
+    }
+
+    #[test]
+    fn advance_media_time_progresses_by_frame_duration_without_reset() {
+        let mut state = CaptureState::default();
+
+        let first = advance_media_time(&mut state, Duration::from_millis(40));
+        let second = advance_media_time(&mut state, Duration::from_millis(40));
+        let third = advance_media_time(&mut state, Duration::from_millis(40));
+
+        assert_eq!(first, MediaTime::ZERO);
+        assert_eq!(second, MediaTime::from_micros(40_000));
+        assert_eq!(third, MediaTime::from_micros(80_000));
+        assert_eq!(state.media_time, MediaTime::from_micros(120_000));
+    }
+
+    #[test]
+    fn resolve_video_pt_selects_the_negotiated_h264_payload_type() {
+        let now = Instant::now();
+        let mut offerer = RtcConfig::new().clear_codecs().enable_h264(true).build(now);
+        let mut answerer = RtcConfig::new().clear_codecs().enable_h264(true).build(now);
+
+        let mut change = offerer.sdp_api();
+        let mid = change.add_media(MediaKind::Video, Direction::SendRecv, None, None, None);
+        let (offer, _) = change.apply().expect("create H264 offer");
+        let answer = answerer
+            .sdp_api()
+            .accept_offer(offer)
+            .expect("accept H264 offer");
+        let _ = answer;
+
+        let pt = resolve_video_pt(&mut answerer, mid).expect("negotiated video PT");
+        let writer = answerer.writer(mid).expect("writer for negotiated video mid");
+        let negotiated = writer
+            .payload_params()
+            .find(|params| params.spec().codec == Codec::H264)
+            .expect("negotiated H264 payload");
+
+        assert_eq!(pt, negotiated.pt());
+        assert_eq!(negotiated.spec().codec, Codec::H264);
+    }
+
+    #[test]
+    fn should_log_frame_limits_chatter_but_keeps_boundary_counts_visible() {
+        assert!(should_log_frame(1, 0));
+        assert!(should_log_frame(16, 0));
+        assert!(should_log_frame(120, 0));
+        assert!(should_log_frame(2, 3));
+        assert!(!should_log_frame(17, 0));
+        assert!(!should_log_frame(119, 0));
+    }
+
+    #[test]
+    fn disconnected_peer_stops_capture_and_clears_next_deadline() {
+        let mut state = CaptureState {
+            video_mid: Some(Mid::from("screen")),
+            video_pt: Some(Pt::from(127u8)),
+            capture_active: true,
+            next_capture_at: Some(Instant::now()),
+            media_time: MediaTime::ZERO,
+            frames_seen: 12,
+            frames_sent: 8,
+        };
+
+        handle_rtc_event(
+            Event::IceConnectionStateChange(IceConnectionState::Disconnected),
+            &mut state,
+        );
+
+        assert!(!state.capture_active);
+        assert!(state.next_capture_at.is_none());
+    }
+
+    #[test]
+    fn sync_capture_state_for_connection_rearms_capture_after_idle() {
+        let mut rtc = Rtc::new(Instant::now());
+        let mut state = CaptureState {
+            video_mid: Some(Mid::from("screen")),
+            video_pt: Some(Pt::from(127u8)),
+            capture_active: false,
+            next_capture_at: None,
+            media_time: MediaTime::from_micros(123_000),
+            frames_seen: 12,
+            frames_sent: 8,
+        };
+
+        sync_capture_state_for_connection(true, &mut rtc, &mut state)
+            .expect("rearm capture on reconnect");
+
+        assert!(state.capture_active);
+        assert_eq!(state.media_time, MediaTime::ZERO);
+        assert_eq!(state.frames_seen, 0);
+        assert_eq!(state.frames_sent, 0);
+        assert!(state.next_capture_at.is_some());
     }
 
     #[test]
