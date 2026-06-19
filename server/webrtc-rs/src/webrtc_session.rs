@@ -325,7 +325,7 @@ async fn capture_frame(
 
     state.frames_seen += 1;
     if should_log_frame(state.frames_seen, 0) {
-        info!(
+        debug!(
             "H264 frame read begin width={} height={} bitrate={}",
             screen.width, screen.height, screen.bitrate
         );
@@ -341,7 +341,7 @@ async fn capture_frame(
     match frame {
         Ok(Some(frame)) => {
             if should_log_frame(state.frames_seen, frame.result) {
-                info!(
+                debug!(
                     "H264 frame read result={} bytes={} {}",
                     frame.result,
                     frame.data.len(),
@@ -381,7 +381,7 @@ async fn capture_frame(
                     } else {
                         state.frames_sent += 1;
                         if should_log_frame(state.frames_sent, frame.result) {
-                            info!(
+                            debug!(
                                 "H264 frame queued result={} sent_frames={}",
                                 frame.result, state.frames_sent
                             );
@@ -396,7 +396,7 @@ async fn capture_frame(
         }
         Ok(None) => {
             if should_log_frame(state.frames_seen, -999) {
-                info!("H264 frame read returned no frame");
+                debug!("H264 frame read returned no frame");
             }
         }
         Err(err) => warn!("failed to read H264 frame: {err:#}"),
@@ -510,7 +510,7 @@ fn sync_capture_state_for_connection(
 }
 
 fn should_log_frame(frame_index: u64, result: i32) -> bool {
-    frame_index <= 16 || frame_index % 120 == 0 || result == 3
+    frame_index <= 3 || frame_index % 300 == 0 || result == 3
 }
 
 fn describe_h264(data: &[u8]) -> String {
@@ -960,11 +960,11 @@ mod tests {
     #[test]
     fn should_log_frame_limits_chatter_but_keeps_boundary_counts_visible() {
         assert!(should_log_frame(1, 0));
-        assert!(should_log_frame(16, 0));
-        assert!(should_log_frame(120, 0));
+        assert!(should_log_frame(3, 0));
+        assert!(should_log_frame(300, 0));
         assert!(should_log_frame(2, 3));
-        assert!(!should_log_frame(17, 0));
-        assert!(!should_log_frame(119, 0));
+        assert!(!should_log_frame(4, 0));
+        assert!(!should_log_frame(299, 0));
     }
 
     #[test]

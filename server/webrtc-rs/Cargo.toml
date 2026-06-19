@@ -16,4 +16,5 @@ serde_yaml = "0.9"
 str0m = { version = "0.20", default-features = false, features = ["rust-crypto"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
+tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

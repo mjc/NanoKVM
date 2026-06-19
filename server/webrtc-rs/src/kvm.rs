@@ -49,7 +49,7 @@ fn dl_lib_path_from_exe(exe: &Path, library_name: &str) -> anyhow::Result<PathBu
         .join(library_name))
 }
 
-fn initialize_kvm_hardware<FInit, FControl, FSleep>(
+fn initialize_kvm_hardware<FInit, FControl, FControlReturn, FSleep>(
     hdmi_disabled: bool,
     mut init: FInit,
     mut hdmi_control: FControl,
@@ -57,15 +57,15 @@ fn initialize_kvm_hardware<FInit, FControl, FSleep>(
 )
 where
     FInit: FnMut(u8),
-    FControl: FnMut(u8),
+    FControl: FnMut(u8) -> FControlReturn,
     FSleep: FnMut(Duration),
 {
     init(0);
-    hdmi_control(0);
+    let _ = hdmi_control(0);
     sleep(Duration::from_millis(10));
 
     if !hdmi_disabled {
-        hdmi_control(1);
+        let _ = hdmi_control(1);
         sleep(Duration::from_secs(2));
     }
 }
@@ -80,12 +80,11 @@ mod imp {
     use std::sync::Mutex;
     use std::sync::OnceLock;
     use std::thread;
-    use std::time::Duration;
 
     use anyhow::{anyhow, Context};
     use libloading::Library;
 
-    use super::{finalize_h264_frame, EncodedFrame};
+    use super::{dl_lib_path_from_exe, finalize_h264_frame, initialize_kvm_hardware, EncodedFrame};
 
     const IMG_H264_TYPE: u8 = 1;
 
@@ -411,6 +410,31 @@ mod tests {
                 "init:0".to_owned(),
                 "hdmi:0".to_owned(),
                 "sleep:10".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn initialize_kvm_hardware_accepts_hdmi_control_status_return() {
+        let calls = RefCell::new(Vec::new());
+        initialize_kvm_hardware(
+            false,
+            |debug_info_en| calls.borrow_mut().push(format!("init:{debug_info_en}")),
+            |enable| {
+                calls.borrow_mut().push(format!("hdmi:{enable}"));
+                enable
+            },
+            |duration| calls.borrow_mut().push(format!("sleep:{}", duration.as_millis())),
+        );
+
+        assert_eq!(
+            calls.into_inner(),
+            vec![
+                "init:0".to_owned(),
+                "hdmi:0".to_owned(),
+                "sleep:10".to_owned(),
+                "hdmi:1".to_owned(),
+                "sleep:2000".to_owned(),
             ]
         );
     }

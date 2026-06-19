@@ -28,7 +28,11 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let (log_writer, _log_guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
+        .lossy(true)
+        .finish(std::io::stdout());
     tracing_subscriber::fmt()
+        .with_writer(log_writer)
         .with_env_filter(tracing_env_filter(std::env::var("RUST_LOG").ok().as_deref()))
         .init();
     from_feature_flags().install_process_default();
