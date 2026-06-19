@@ -653,24 +653,30 @@ fn build_rtc() -> Rtc {
 }
 
 fn select_bind_ip() -> anyhow::Result<IpAddr> {
-    if let Some(addr) = get_if_addrs()?
-        .into_iter()
-        .find_map(|iface| match iface.addr {
-            IfAddr::V4(v4) if !v4.ip.is_loopback() && !v4.ip.is_unspecified() => {
-                Some(IpAddr::V4(v4.ip))
-            }
-            _ => None,
-        })
-    {
-        return Ok(addr);
-    }
+    let candidates = get_if_addrs()?.into_iter().filter_map(|iface| match iface.addr {
+        IfAddr::V4(v4) => Some(IpAddr::V4(v4.ip)),
+        _ => None,
+    });
 
-    Ok(IpAddr::V4(Ipv4Addr::LOCALHOST))
+    Ok(select_bind_ip_from_candidates(candidates))
+}
+
+fn select_bind_ip_from_candidates<I>(candidates: I) -> IpAddr
+where
+    I: IntoIterator<Item = IpAddr>,
+{
+    candidates
+        .into_iter()
+        .find(|addr| matches!(addr, IpAddr::V4(v4) if !v4.is_loopback() && !v4.is_unspecified()))
+        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use tokio::net::UdpSocket;
+    use tokio::sync::mpsc;
 
     #[test]
     fn parses_browser_candidate_string() {
@@ -741,6 +747,89 @@ mod tests {
     #[test]
     fn browser_candidate_line_rejects_bad_json() {
         assert!(browser_candidate_line(r#"{"candidate":}"#).is_err());
+    }
+
+    #[test]
+    fn select_bind_ip_from_candidates_prefers_first_routable_ipv4() {
+        let selected = select_bind_ip_from_candidates([
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 55)),
+        ]);
+
+        assert_eq!(selected, IpAddr::V4(Ipv4Addr::new(192, 0, 2, 55)));
+    }
+
+    #[test]
+    fn select_bind_ip_from_candidates_falls_back_to_localhost() {
+        let selected = select_bind_ip_from_candidates([
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            IpAddr::V6("2001:db8::1".parse().unwrap()),
+        ]);
+
+        assert_eq!(selected, IpAddr::V4(Ipv4Addr::LOCALHOST));
+    }
+
+    #[tokio::test]
+    async fn heartbeat_round_trips_without_disturbing_capture_state() {
+        let socket = Arc::new(
+            UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .expect("bind test UDP socket"),
+        );
+        let mut rtc = build_rtc();
+        let mut state = CaptureState::default();
+        let mut next_rtc_timeout = Instant::now();
+        let (signaling_tx, mut signaling_rx) = mpsc::unbounded_channel();
+
+        handle_browser_message(
+            Message::new("heartbeat", ""),
+            &socket,
+            &signaling_tx,
+            &mut rtc,
+            &mut state,
+            &mut next_rtc_timeout,
+        )
+        .await
+        .expect("heartbeat event");
+
+        assert_eq!(
+            signaling_rx.recv().await,
+            Some(Message::new("heartbeat", ""))
+        );
+        assert!(state.video_mid.is_none());
+        assert!(state.video_pt.is_none());
+        assert!(!state.capture_active);
+    }
+
+    #[tokio::test]
+    async fn unknown_browser_event_is_ignored_without_emitting_signaling() {
+        let socket = Arc::new(
+            UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .expect("bind test UDP socket"),
+        );
+        let mut rtc = build_rtc();
+        let mut state = CaptureState::default();
+        let mut next_rtc_timeout = Instant::now();
+        let (signaling_tx, mut signaling_rx) = mpsc::unbounded_channel();
+
+        handle_browser_message(
+            Message::new("something-else", "{}"),
+            &socket,
+            &signaling_tx,
+            &mut rtc,
+            &mut state,
+            &mut next_rtc_timeout,
+        )
+        .await
+        .expect("unknown event");
+
+        assert!(signaling_rx.try_recv().is_err());
+        assert!(state.video_mid.is_none());
+        assert!(state.video_pt.is_none());
+        assert!(!state.capture_active);
     }
 
     #[test]
