@@ -64,6 +64,8 @@ void new_app_init(void)
 	system("cp -f /kvmapp/system/init.d/S03usbdev /etc/init.d/");
 	system("cp -f /kvmapp/system/init.d/S15kvmhwd /etc/init.d/");
 	system("cp -f /kvmapp/system/init.d/S30eth /etc/init.d/");
+	system("rm -f /etc/init.d/S23ntp");
+	system("cp -f /kvmapp/system/init.d/S31ntpd /etc/init.d/");
 	system("cp -f /kvmapp/system/init.d/S50sshd /etc/init.d/");
 	if(kvm_wifi_exist()) {
 		system("cp -f /kvmapp/system/init.d/S30wifi /etc/init.d/");
