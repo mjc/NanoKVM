@@ -113,6 +113,44 @@ func TestCloseDeviceForWriteClosesKeyboardHandles(t *testing.T) {
 	}
 }
 
+func TestCloseDeviceNoLockDoesNotCloseDeletedHandle(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "hid-deleted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(file.Name()); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &Hid{g0: file}
+	h.closeDeviceNoLock(h.keyboardDevice(HID0))
+	if h.g0 != nil {
+		t.Fatal("deleted HID handle was not detached")
+	}
+	if _, err := file.Stat(); err != nil {
+		t.Fatalf("deleted HID handle was closed: %v", err)
+	}
+}
+
+func TestCloseKeyboardLedReaderDoesNotCloseDeletedHandle(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "hid-led-deleted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(file.Name()); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &Hid{g0Reader: file}
+	h.closeKeyboardLedReaderNoLock()
+	if h.g0Reader != nil {
+		t.Fatal("deleted keyboard LED handle was not detached")
+	}
+	if _, err := file.Stat(); err != nil {
+		t.Fatalf("deleted keyboard LED handle was closed: %v", err)
+	}
+}
+
 func TestWriteWithTimeoutRetriesEAGAIN(t *testing.T) {
 	writer := &scriptedWriter{
 		writes: []scriptedWrite{

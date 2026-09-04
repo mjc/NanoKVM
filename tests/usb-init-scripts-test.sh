@@ -359,15 +359,24 @@ test_normal_disable_hid_removes_hid_functions(){
     assert_no_hid_functions "${g}"
 }
 
-test_normal_legacy_mass_storage(){
+test_normal_empty_disk_is_not_exposed(){
     base=$(new_env)
     : > "${base}/boot/usb.disk0"
     run_start "${NORMAL_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
 
-    assert_link "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}" "functions/${USB_MASS_STORAGE_FUNC}"
-    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/removable")" "1" "mass storage removable"
-    assert_eq "$(cat "${g}/functions/${USB_MASS_STORAGE_FUNC}/lun.0/file")" "${USB_LEGACY_EMPTY_DISK_BACKING}" "legacy empty disk backing"
+    assert_no_file "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}"
+    assert_no_file "${g}/functions/${USB_MASS_STORAGE_FUNC}"
+}
+
+test_normal_data_partition_is_not_exposed(){
+    base=$(new_env)
+    printf '%s\n' "${USB_LEGACY_EMPTY_DISK_BACKING}" > "${base}/boot/usb.disk0"
+    run_start "${NORMAL_SCRIPT}" "${base}"
+    g="${base}/gadget/g0"
+
+    assert_no_file "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}"
+    assert_no_file "${g}/functions/${USB_MASS_STORAGE_FUNC}"
 }
 
 test_normal_mounted_image_and_network(){
@@ -420,7 +429,7 @@ test_mode_switches_rebuild_gadget_contents(){
     run_start "${NORMAL_SCRIPT}" "${base}"
     g="${base}/gadget/g0"
     assert_eq "$(cat "${g}/bcdDevice")" "${USB_NORMAL_BCD_DEVICE}" "normal mode bcdDevice"
-    assert_link "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}" "functions/${USB_MASS_STORAGE_FUNC}"
+    assert_no_file "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}"
     assert_rndis_function "${g}" mode-switch-normal
     assert_os_descriptors "${g}" mode-switch-normal
 
@@ -440,7 +449,7 @@ test_mode_switches_rebuild_gadget_contents(){
     assert_eq "$(cat "${g}/bcdDevice")" "${USB_NORMAL_BCD_DEVICE}" "switched-back normal bcdDevice"
     assert_normal_composite_descriptors "${g}" switched-normal
     assert_hid_functions "${g}" switched-normal "${KEYBOARD_REPORT_DESC}" "${ABSOLUTE_MOUSE_REPORT_DESC}" 1
-    assert_link "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}" "functions/${USB_MASS_STORAGE_FUNC}"
+    assert_no_file "${g}/configs/c.1/${USB_MASS_STORAGE_FUNC}"
     assert_rndis_function "${g}" switched-normal
     assert_os_descriptors "${g}" switched-normal
 }
@@ -519,7 +528,8 @@ setup_fake_configfs_tools
 test_normal_hid_descriptors
 test_normal_bios_flag_keeps_only_boot_hid_interfaces
 test_normal_disable_hid_removes_hid_functions
-test_normal_legacy_mass_storage
+test_normal_empty_disk_is_not_exposed
+test_normal_data_partition_is_not_exposed
 test_normal_mounted_image_and_network
 test_network_restart_removes_os_desc_link
 test_ncm_network_descriptors

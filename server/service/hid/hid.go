@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -206,6 +207,14 @@ func (h *Hid) closeDeviceNoLock(device hidDevice) {
 	}
 
 	device.set(nil)
+	if hidFileWasDeleted(file) {
+		log.Debugf("detach %s because the cached HID handle was deleted", device.path)
+		// The shipping kernel can oops when release() runs after configfs has
+		// deleted the HID function. Controlled gadget rebuilds close handles
+		// before teardown; detach unexpected stale handles without release().
+		runtime.SetFinalizer(file, nil)
+		return
+	}
 	if err := file.Close(); err != nil {
 		log.Debugf("close %s failed: %s", device.path, err)
 	}
@@ -241,19 +250,13 @@ func (h *Hid) closeKeyboardLedReaderNoLock() {
 	file := h.g0Reader
 	h.g0Reader = nil
 	h.notifyKeyboardLedReaderNoLock()
+	if hidFileWasDeleted(file) {
+		runtime.SetFinalizer(file, nil)
+		return
+	}
 	if err := file.Close(); err != nil {
 		log.Debugf("close keyboard LED reader failed: %s", err)
 	}
-}
-
-func (h *Hid) closeDeletedDeviceNoLock(device hidDevice) {
-	file := device.get()
-	if file == nil || !hidFileWasDeleted(file) {
-		return
-	}
-
-	log.Debugf("close %s because the cached HID handle was deleted", device.path)
-	h.closeDeviceForWriteNoLock(device)
 }
 
 func hidFileWasDeleted(file *os.File) bool {
@@ -400,7 +403,6 @@ func (h *Hid) writeHID(device hidDevice, data []byte) error {
 	device.mu.Lock()
 	defer device.mu.Unlock()
 
-	h.closeDeletedDeviceNoLock(device)
 	if err := h.openDeviceForWriteNoLock(device); err != nil {
 		return err
 	}
