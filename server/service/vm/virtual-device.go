@@ -100,6 +100,10 @@ func (s *Service) UpdateVirtualDevice(c *gin.Context) {
 		h.Unlock()
 	}()
 	if req.Device == "disk" {
+		if !isVirtualDiskConfigured() && !isDefaultVirtualDiskReady() {
+			rsp.ErrRsp(c, -3, "data disk is not ready")
+			return
+		}
 		commands = virtualDiskCommands()
 	}
 
@@ -131,6 +135,15 @@ func virtualDiskCommands() []string {
 
 func isDefaultVirtualDiskConfigured() bool {
 	return virtualdisk.IsDefaultConfigured(virtualdisk.Paths{
+		Config:    virtualDiskPath,
+		Marker:    dataDiskMarkerPath,
+		Pending:   formatPendingPath,
+		Partition: dataPartitionPath,
+	})
+}
+
+func isDefaultVirtualDiskReady() bool {
+	return virtualdisk.IsDefaultReady(virtualdisk.Paths{
 		Config:    virtualDiskPath,
 		Marker:    dataDiskMarkerPath,
 		Pending:   formatPendingPath,

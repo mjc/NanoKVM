@@ -37,16 +37,7 @@ func IsConfigured(paths Paths) bool {
 
 func IsDefaultConfigured(paths Paths) bool {
 	disk := ConfiguredDisk(paths)
-	if disk == paths.Partition {
-		return true
-	}
-
-	diskInfo, err := os.Stat(disk)
-	if err != nil {
-		return false
-	}
-	partitionInfo, err := os.Stat(paths.Partition)
-	return err == nil && os.SameFile(diskInfo, partitionInfo)
+	return disk == paths.Partition
 }
 
 func ConfiguredDisk(paths Paths) string {

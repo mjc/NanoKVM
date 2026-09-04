@@ -157,8 +157,8 @@ func TestIsDefaultConfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, paths.Config, alias)
-	if !IsDefaultConfigured(paths) {
-		t.Fatal("alias of ready default data disk reported as custom")
+	if IsDefaultConfigured(paths) {
+		t.Fatal("alias of ready default data disk was treated as owned default")
 	}
 
 	writeFile(t, paths.Config, "/data/custom.img")

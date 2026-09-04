@@ -6,9 +6,13 @@
 : "${NANOKVM_DATA_FORMAT_PENDING:=/etc/kvm.disk0.formatting}"
 : "${NANOKVM_DATA_PART:=/dev/mmcblk0p3}"
 : "${NANOKVM_BOOT_DIR:=/boot}"
+: "${NANOKVM_MOUNTS_FILE:=/proc/mounts}"
 
 data_disk_ready(){
-    [ -e "$NANOKVM_DISK0_MARKER" ] && [ ! -e "$NANOKVM_DATA_FORMAT_PENDING" ] && [ -e "$NANOKVM_DATA_PART" ]
+    [ -e "$NANOKVM_DISK0_MARKER" ] \
+        && [ ! -e "$NANOKVM_DATA_FORMAT_PENDING" ] \
+        && [ -e "$NANOKVM_DATA_PART" ] \
+        && awk -v part="$NANOKVM_DATA_PART" '$1 == part { found = 1 } END { exit found }' "$NANOKVM_MOUNTS_FILE" 2>/dev/null
 }
 
 default_data_disk_file(){
@@ -31,17 +35,33 @@ is_default_data_partition(){
 
 resolve_disk_file(){
     disk_file="$(normalize_disk_file "$1")"
-    if [ -z "$disk_file" ] || is_default_data_partition "$disk_file"
+    if [ -z "$disk_file" ] || [ "$disk_file" = "$NANOKVM_DATA_PART" ]
     then
             default_data_disk_file
+    elif is_default_data_partition "$disk_file"
+    then
+            # A path alias can become visible only after /data is mounted.
+            # Refuse it instead of risking simultaneous local and USB access.
+            return
     else
             printf '%s\n' "$disk_file"
+    fi
+}
+
+clear_mass_storage_backing(){
+    if [ -e functions/mass_storage.disk0/lun.0/file ]
+    then
+            if ! printf '\n' > functions/mass_storage.disk0/lun.0/file
+            then
+                    return 1
+            fi
     fi
 }
 
 configure_mass_storage(){
     if [ ! -e "$NANOKVM_BOOT_DIR/usb.disk0" ]
     then
+            clear_mass_storage_backing
             return
     fi
 
@@ -49,6 +69,7 @@ configure_mass_storage(){
     data_file="$(resolve_disk_file "$disk")"
     if [ -z "$data_file" ]
     then
+            clear_mass_storage_backing
             return
     fi
 
@@ -192,7 +213,11 @@ start_usb_dev(){
         ln -s functions/hid.GS2 configs/c.1
     fi
 
-    configure_mass_storage
+    if ! configure_mass_storage
+    then
+        echo "failed to configure mass storage" >&2
+        return 1
+    fi
 
     ls /sys/class/udc/ | cat > UDC
     echo device > /proc/cviusb/otg_role

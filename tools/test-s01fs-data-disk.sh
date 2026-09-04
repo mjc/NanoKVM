@@ -6,6 +6,7 @@ s01_script="$repo_root/kvmapp/system/init.d/S01fs"
 s03_script="$repo_root/kvmapp/system/init.d/S03usbdev"
 real_dd="$(command -v dd)"
 real_mkdir="$(command -v mkdir)"
+real_touch="$(command -v touch)"
 
 tmpdir=""
 original_path="$PATH"
@@ -89,12 +90,27 @@ printf 'dd %s\n' "$*" >> "$NANOKVM_TEST_LOG"
 exec "$NANOKVM_REAL_DD" "$@"
 EOF
 
-	chmod +x "$bin/mount" "$bin/mkdir" "$bin/resize2fs" "$bin/sleep" "$bin/parted" "$bin/blkid" "$bin/mkfs.exfat" "$bin/dd"
+	cat >"$bin/touch" <<'EOF'
+#!/bin/sh
+case "$1" in
+	"$NANOKVM_DISK0_MARKER"|"$NANOKVM_DATA_FORMAT_PENDING")
+		if [ "${NANOKVM_TOUCH_FAIL:-0}" = "1" ]; then
+			exit 1
+		fi
+		;;
+esac
+exec "$NANOKVM_REAL_TOUCH" "$@"
+EOF
+
+	chmod +x "$bin/mount" "$bin/mkdir" "$bin/resize2fs" "$bin/sleep" "$bin/parted" "$bin/blkid" "$bin/mkfs.exfat" "$bin/dd" "$bin/touch"
 }
 
 setup_case() {
 	tmpdir="$(mktemp -d)"
 	original_path="$PATH"
+	unset NANOKVM_MKFS_FAIL NANOKVM_DELAY_DATA_PART_UNTIL_SLEEP \
+		NANOKVM_NEVER_CREATE_DATA_PART NANOKVM_MOUNT_FAIL \
+		NANOKVM_PARTED_CREATES_STALE_FS NANOKVM_TOUCH_FAIL
 	mkdir -p "$tmpdir/bin" "$tmpdir/boot" "$tmpdir/data" "$tmpdir/dev" "$tmpdir/etc"
 	make_stubs "$tmpdir/bin"
 
@@ -106,16 +122,19 @@ setup_case() {
 	export NANOKVM_DATA_PART="$tmpdir/dev/mmcblk0p3"
 	export NANOKVM_BOOT_DIR="$tmpdir/boot"
 	export NANOKVM_DATA_DIR="$tmpdir/data"
+	export NANOKVM_MOUNTS_FILE="$tmpdir/mounts"
 	export NANOKVM_DISK0_MARKER="$tmpdir/etc/kvm.disk0"
 	export NANOKVM_DATA_FORMAT_PENDING="$tmpdir/etc/kvm.disk0.formatting"
 	export NANOKVM_PROFILE="$tmpdir/profile"
 	export NANOKVM_REAL_DD="$real_dd"
 	export NANOKVM_REAL_MKDIR="$real_mkdir"
+	export NANOKVM_REAL_TOUCH="$real_touch"
 
 	: > "$NANOKVM_DISK"
 	: > "$NANOKVM_BOOT_PART"
 	: > "$NANOKVM_ROOT_PART"
 	: > "$NANOKVM_TEST_LOG"
+	: > "$NANOKVM_MOUNTS_FILE"
 	: > "$NANOKVM_PROFILE"
 }
 
@@ -145,9 +164,18 @@ run_case() {
 
 	setup_case
 	local status=0
-	"$setup_fn" || status=$?
-	[ "$status" -ne 0 ] || "$run_fn" || status=$?
-	[ "$status" -ne 0 ] || "$assert_fn" || status=$?
+	set +e
+	"$setup_fn"
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		"$run_fn"
+		status=$?
+	fi
+	if [ "$status" -eq 0 ]; then
+		(set -e; "$assert_fn")
+		status=$?
+	fi
+	set -e
 	teardown_case
 	if [ "$status" -ne 0 ]; then
 		return "$status"
@@ -254,6 +282,36 @@ assert_mount_failure_clears_ready_marker() {
 	log_contains "mkfs.exfat $NANOKVM_DATA_PART"
 	log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
 	unset NANOKVM_MOUNT_FAIL
+}
+
+given_ready_marker_write_fails() {
+	given_pending_partition
+	export NANOKVM_TOUCH_FAIL=1
+}
+
+assert_marker_write_failure_stays_unready() {
+	exists "$NANOKVM_DATA_PART.hasfs"
+	missing "$NANOKVM_DISK0_MARKER"
+	missing "$NANOKVM_DATA_FORMAT_PENDING"
+	log_contains "mkfs.exfat $NANOKVM_DATA_PART"
+	log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
+	unset NANOKVM_TOUCH_FAIL
+}
+
+given_default_ready_marker_write_fails() {
+	: > "$NANOKVM_DATA_PART"
+	: > "$NANOKVM_DATA_FORMAT_PENDING"
+	: > "$NANOKVM_BOOT_DIR/usb.disk0"
+	export NANOKVM_TOUCH_FAIL=1
+}
+
+assert_default_marker_write_failure_mounts_locally() {
+	exists "$NANOKVM_DATA_PART.hasfs"
+	missing "$NANOKVM_DISK0_MARKER"
+	missing "$NANOKVM_DATA_FORMAT_PENDING"
+	log_contains "mkfs.exfat $NANOKVM_DATA_PART"
+	log_contains "mount $NANOKVM_DATA_PART $NANOKVM_DATA_DIR"
+	unset NANOKVM_TOUCH_FAIL
 }
 
 given_unknown_existing_partition() {
@@ -488,6 +546,21 @@ given_s03_missing_device() {
 	: > "$NANOKVM_DISK0_MARKER"
 }
 
+given_s03_mounted_default() {
+	given_s03_ready_default
+	printf '%s %s exfat rw,relatime 0 0\n' "$NANOKVM_DATA_PART" "$NANOKVM_DATA_DIR" > "$NANOKVM_MOUNTS_FILE"
+}
+
+given_s03_mounted_default_with_stale_lun() {
+	given_s03_mounted_default
+	mkdir -p "$tmpdir/gadget/functions/mass_storage.disk0/lun.0"
+	printf '%s\n' "$NANOKVM_DATA_PART" > "$tmpdir/gadget/functions/mass_storage.disk0/lun.0/file"
+}
+
+assert_s03_mounted_default_clears_stale_lun() {
+	[ "$(cat "$tmpdir/gadget/functions/mass_storage.disk0/lun.0/file")" = "" ]
+}
+
 assert_s03_custom_disk_allowed() {
 	[ "$(resolve_disk_file "/data/custom.img")" = "/data/custom.img" ]
 	[ "$(resolve_disk_file "  /data/custom.img  ")" = "/data/custom.img" ]
@@ -507,8 +580,8 @@ given_s03_default_alias() {
 	printf '%s\n' "$tmpdir/data-alias" > "$NANOKVM_BOOT_DIR/usb.disk0"
 }
 
-assert_s03_alias_to_default_resolves_to_default() {
-	[ "$(resolve_disk_file "$tmpdir/data-alias")" = "$NANOKVM_DATA_PART" ]
+assert_s03_alias_to_default_is_rejected() {
+	[ -z "$(resolve_disk_file "$tmpdir/data-alias")" ]
 }
 
 assert_s03_mass_storage_created_for_ready_default() {
@@ -544,6 +617,8 @@ run_case "keeps pending marker when mkfs fails" given_format_fails run_s01 asser
 run_case "keeps pending marker when delayed partition format fails" given_delayed_partition_and_format_fails run_s01 assert_delayed_partition_failure_keeps_pending
 run_case "keeps pending marker when new partition device is late" given_partition_never_appears run_s01 assert_late_device_keeps_pending_without_format
 run_case "removes marker when mount fails after format" given_mount_fails_after_format run_s01 assert_mount_failure_clears_ready_marker
+run_case "does not claim readiness when marker creation fails" given_ready_marker_write_fails run_s01 assert_marker_write_failure_stays_unready
+run_case "mounts default data locally when marker creation fails" given_default_ready_marker_write_fails run_s01 assert_default_marker_write_failure_mounts_locally
 run_case "does not format or mount unknown existing partition" given_unknown_existing_partition run_s01 assert_unknown_partition_ignored
 run_case "does not format zero-filled legacy marked partition" given_empty_legacy_marked_partition run_s01 assert_empty_legacy_partition_left_unformatted
 run_case "does not recover zero-filled partition without legacy marker" given_empty_unmarked_partition run_s01 assert_empty_unmarked_partition_ignored
@@ -564,10 +639,12 @@ run_case "S03 exposes default data disk only when ready" given_s03_ready_default
 run_case "S03 hides default and explicit p3 when format is pending" given_s03_pending_default run_s03_helper assert_s03_default_hidden
 run_case "S03 hides default and explicit p3 without ready marker" given_s03_missing_marker run_s03_helper assert_s03_default_hidden
 run_case "S03 hides default and explicit p3 when device is missing" given_s03_missing_device run_s03_helper assert_s03_default_hidden
+run_case "S03 hides default data disk while p3 is mounted" given_s03_mounted_default run_s03_helper assert_s03_default_hidden
+run_case "S03 clears stale backing while p3 is mounted" given_s03_mounted_default_with_stale_lun run_s03_mass_storage assert_s03_mounted_default_clears_stale_lun
 run_case "S03 still allows custom backing files" noop run_s03_helper assert_s03_custom_disk_allowed
 run_case "S03 trims explicit p3 before resolving readiness" given_s03_ready_default run_s03_helper assert_s03_explicit_default_with_whitespace_ready
 run_case "S03 hides whitespace explicit p3 while format is pending" given_s03_pending_default run_s03_helper assert_s03_explicit_default_with_whitespace_hidden
-run_case "S03 normalizes aliases of the default data disk" given_s03_default_alias run_s03_helper assert_s03_alias_to_default_resolves_to_default
+run_case "S03 rejects aliases of the default data disk" given_s03_default_alias run_s03_helper assert_s03_alias_to_default_is_rejected
 run_case "S03 creates mass storage for ready default data disk" given_s03_ready_default run_s03_mass_storage assert_s03_mass_storage_created_for_ready_default
 run_case "S03 skips mass storage while default data disk is pending" given_s03_pending_default run_s03_mass_storage assert_s03_mass_storage_not_created
 run_case "S03 creates mass storage for custom backing files" given_s03_custom_disk run_s03_mass_storage assert_s03_mass_storage_created_for_custom_disk

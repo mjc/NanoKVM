@@ -25,12 +25,12 @@ RELEASE_BUILD_CMD := /home/build/NanoKVM/scripts/build-in-container.sh
 
 .PHONY: help check-root builder-image rebuild-image check-image shell app support vision \
         web release-build package release all test test-s01fs-data-disk \
-        test-go-storage test-go-vm clean
+        test-go-storage test-go-vm test-go-utils test-go-download clean
 
 # Default target
 all: app support
 
-test: test-s01fs-data-disk test-go-storage test-go-vm
+test: test-s01fs-data-disk test-go-storage test-go-vm test-go-utils test-go-download
 
 test-s01fs-data-disk:
 	@bash tools/test-s01fs-data-disk.sh
@@ -40,6 +40,12 @@ test-go-storage:
 
 test-go-vm:
 	@cd server && go test ./service/vm/virtualdisk
+
+test-go-utils:
+	@cd server && go test ./utils
+
+test-go-download:
+	@cd server && go test ./service/download
 
 # Help target
 help:

@@ -17,6 +17,9 @@ func withDataDiskPaths(t *testing.T) (marker string, pending string, part string
 	oldMarker := dataDiskMarkerPath
 	oldPending := formatPendingPath
 	oldPart := dataPartitionPath
+	oldVirtualDisk := virtualDiskPath
+	oldMounted := dataDirectoryMount
+	oldRunCommand := runShellCommand
 
 	dir := t.TempDir()
 	marker = filepath.Join(dir, "kvm.disk0")
@@ -26,11 +29,17 @@ func withDataDiskPaths(t *testing.T) (marker string, pending string, part string
 	dataDiskMarkerPath = marker
 	formatPendingPath = pending
 	dataPartitionPath = part
+	virtualDiskPath = filepath.Join(dir, "usb.disk0")
+	dataDirectoryMount = func(string) bool { return true }
+	runShellCommand = func(string) error { return nil }
 
 	t.Cleanup(func() {
 		dataDiskMarkerPath = oldMarker
 		formatPendingPath = oldPending
 		dataPartitionPath = oldPart
+		virtualDiskPath = oldVirtualDisk
+		dataDirectoryMount = oldMounted
+		runShellCommand = oldRunCommand
 	})
 
 	return marker, pending, part
@@ -41,6 +50,15 @@ func touch(t *testing.T, path string) {
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatalf("touch %s: %v", path, err)
 	}
+}
+
+func readText(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(content)
 }
 
 func TestMountImagePathDefaultDataDisk(t *testing.T) {
@@ -295,6 +313,9 @@ func TestMountImageEmptyRequestClearsCurrentImageWhenDataDiskNotReady(t *testing
 
 	NewService().MountImage(context)
 
+	if !strings.Contains(response.Body.String(), `"code":0`) {
+		t.Fatalf("response = %s, want success", response.Body.String())
+	}
 	if strings.Contains(response.Body.String(), "data disk is not ready") {
 		t.Fatalf("response = %s, should allow empty unmount request", response.Body.String())
 	}
@@ -306,5 +327,150 @@ func TestMountImageEmptyRequestClearsCurrentImageWhenDataDiskNotReady(t *testing
 	}
 	if got := readFile(cdromFlag); got != "0" {
 		t.Fatalf("cdromFlag = %q, want reset", got)
+	}
+}
+
+func TestMountImageEmptyRequestRestoresReadyDefaultBacking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	_, _, part := withDataDiskPaths(t)
+	dataDirectoryMount = func(string) bool { return false }
+	touch(t, part)
+	touch(t, dataDiskMarkerPath)
+	touch(t, virtualDiskPath)
+
+	oldMountDevice := mountDevice
+	oldRoFlag := roFlag
+	oldCdromFlag := cdromFlag
+	oldInquiryString := inquiryString
+	dir := t.TempDir()
+	mountDevice = filepath.Join(dir, "file")
+	roFlag = filepath.Join(dir, "ro")
+	cdromFlag = filepath.Join(dir, "cdrom")
+	inquiryString = filepath.Join(dir, "inquiry")
+	t.Cleanup(func() {
+		mountDevice = oldMountDevice
+		roFlag = oldRoFlag
+		cdromFlag = oldCdromFlag
+		inquiryString = oldInquiryString
+	})
+
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = httptest.NewRequest("POST", "/storage/image/mount", strings.NewReader(`{"file":""}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	NewService().MountImage(context)
+
+	if !strings.Contains(response.Body.String(), `"code":0`) {
+		t.Fatalf("response = %s, want success", response.Body.String())
+	}
+	if got := readText(t, mountDevice); got != part {
+		t.Fatalf("mountDevice = %q, want default partition %q", got, part)
+	}
+	if got := readText(t, roFlag); got != "0" {
+		t.Fatalf("roFlag = %q, want reset", got)
+	}
+	if got := readText(t, cdromFlag); got != "0" {
+		t.Fatalf("cdromFlag = %q, want reset", got)
+	}
+}
+
+func TestMountImageEmptyRequestDoesNotExposeMountedDefaultBacking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	_, _, part := withDataDiskPaths(t)
+	touch(t, part)
+	touch(t, dataDiskMarkerPath)
+	touch(t, virtualDiskPath)
+
+	oldMountDevice := mountDevice
+	oldRoFlag := roFlag
+	oldCdromFlag := cdromFlag
+	oldInquiryString := inquiryString
+	dir := t.TempDir()
+	mountDevice = filepath.Join(dir, "file")
+	roFlag = filepath.Join(dir, "ro")
+	cdromFlag = filepath.Join(dir, "cdrom")
+	inquiryString = filepath.Join(dir, "inquiry")
+	t.Cleanup(func() {
+		mountDevice = oldMountDevice
+		roFlag = oldRoFlag
+		cdromFlag = oldCdromFlag
+		inquiryString = oldInquiryString
+	})
+
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = httptest.NewRequest("POST", "/storage/image/mount", strings.NewReader(`{"file":""}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	NewService().MountImage(context)
+
+	if !strings.Contains(response.Body.String(), `"code":0`) {
+		t.Fatalf("response = %s, want success", response.Body.String())
+	}
+	if got := readText(t, mountDevice); got != "" {
+		t.Fatalf("mountDevice = %q, want mounted data disk left detached", got)
+	}
+}
+
+func TestMountImageWhitespaceRequestResetsFlags(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	withDataDiskPaths(t)
+
+	oldMountDevice := mountDevice
+	oldRoFlag := roFlag
+	oldCdromFlag := cdromFlag
+	oldInquiryString := inquiryString
+	dir := t.TempDir()
+	mountDevice = filepath.Join(dir, "file")
+	roFlag = filepath.Join(dir, "ro")
+	cdromFlag = filepath.Join(dir, "cdrom")
+	inquiryString = filepath.Join(dir, "inquiry")
+	t.Cleanup(func() {
+		mountDevice = oldMountDevice
+		roFlag = oldRoFlag
+		cdromFlag = oldCdromFlag
+		inquiryString = oldInquiryString
+	})
+
+	if err := os.WriteFile(roFlag, []byte("1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cdromFlag, []byte("1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = httptest.NewRequest("POST", "/storage/image/mount", strings.NewReader(`{"file":"   "}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	NewService().MountImage(context)
+
+	if !strings.Contains(response.Body.String(), `"code":0`) {
+		t.Fatalf("response = %s, want success", response.Body.String())
+	}
+	if got := readText(t, roFlag); got != "0" {
+		t.Fatalf("roFlag = %q, want reset", got)
+	}
+	if got := readText(t, cdromFlag); got != "0" {
+		t.Fatalf("cdromFlag = %q, want reset", got)
+	}
+}
+
+func TestMountImageDataPathRequiresMountedDataDisk(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	withDataDiskPaths(t)
+	dataDirectoryMount = func(string) bool { return false }
+
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = httptest.NewRequest("POST", "/storage/image/mount", strings.NewReader(`{"file":"/data/custom.iso"}`))
+	context.Request.Header.Set("Content-Type", "application/json")
+
+	NewService().MountImage(context)
+
+	if !strings.Contains(response.Body.String(), "data disk is not mounted") {
+		t.Fatalf("response = %s, want data mount error", response.Body.String())
 	}
 }

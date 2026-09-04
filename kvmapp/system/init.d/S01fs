@@ -11,13 +11,22 @@
 : "${NANOKVM_PROFILE:=/etc/profile}"
 
 format_data_partition() {
+        if ! rm -f "$NANOKVM_DISK0_MARKER"
+        then
+                return 1
+        fi
         if mkfs.exfat "$NANOKVM_DATA_PART"
         then
-                rm -f "$NANOKVM_DATA_FORMAT_PENDING"
-                touch "$NANOKVM_DISK0_MARKER"
+                if ! rm -f "$NANOKVM_DATA_FORMAT_PENDING"
+                then
+                        return 1
+                fi
                 return 0
         fi
-        rm -f "$NANOKVM_DISK0_MARKER"
+        if ! rm -f "$NANOKVM_DISK0_MARKER"
+        then
+                return 1
+        fi
         return 1
 }
 
@@ -72,9 +81,7 @@ then
 
         default_disk_configured=0
         if [ -e "$NANOKVM_BOOT_DIR/usb.disk0" ] \
-                && { [ -z "$disk0_file" ] || [ "$disk0_file" = "$NANOKVM_DATA_PART" ] \
-                || { [ -e "$disk0_file" ] && [ -e "$NANOKVM_DATA_PART" ] \
-                        && [ "$(readlink -f "$disk0_file" 2>/dev/null)" = "$(readlink -f "$NANOKVM_DATA_PART" 2>/dev/null)" ]; }; }
+                && { [ -z "$disk0_file" ] || [ "$disk0_file" = "$NANOKVM_DATA_PART" ]; }
         then
                 default_disk_configured=1
         fi
@@ -86,8 +93,10 @@ then
                 && [ -n "$(blkid "$NANOKVM_DATA_PART" 2>/dev/null)" ]
         then
                 # The virtual disk owns p3 until its toggle remounts /data.
-                touch "$NANOKVM_DISK0_MARKER"
-                data_mount_handled=1
+                if touch "$NANOKVM_DISK0_MARKER"
+                then
+                        data_mount_handled=1
+                fi
         fi
 
         if [ -e "$NANOKVM_BOOT_DIR/usb.disk0" ] && [ "$default_disk_configured" = "1" ]
@@ -108,11 +117,24 @@ then
         then
                 if [ "$default_disk_configured" = "1" ]
                 then
-                        format_data_partition
+                        if format_data_partition
+                        then
+                                if touch "$NANOKVM_DISK0_MARKER"
+                                then
+                                        data_mount_handled=1
+                                fi
+                        else
+                                data_mount_handled=1
+                        fi
                 else
-                        format_and_mount_data_partition
+                        if format_and_mount_data_partition
+                        then
+                                data_mount_handled=1
+                                touch "$NANOKVM_DISK0_MARKER"
+                        else
+                                data_mount_handled=1
+                        fi
                 fi
-                data_mount_handled=1
         fi
 
         if [ -e "$NANOKVM_DATA_PART" ] && [ "$data_mount_handled" = "0" ]
@@ -135,7 +157,10 @@ then
                 then
                         if [ "$data_marker_after_mount" = "1" ]
                         then
-                                touch "$NANOKVM_DISK0_MARKER"
+                                if ! touch "$NANOKVM_DISK0_MARKER"
+                                then
+                                        data_mount_handled=1
+                                fi
                         fi
                 elif [ "$data_marker_after_mount" = "1" ]
                 then
